@@ -86,7 +86,7 @@ export class PlanetDO implements DurableObject {
     // Handle WebSocket upgrade or publishing events
     if (request.url.endsWith('/notify')) {
       const body = await request.json()
-      await this.publisher.publish('updated', body)
+      this.publisher.publish('updated', body)
       return new Response('OK')
     }
 

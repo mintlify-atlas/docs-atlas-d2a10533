@@ -73,13 +73,13 @@ export const orpcUtils = createORPCVueColadaUtils(orpc)
 import { useQuery } from '@pinia/colada'
 import { orpcUtils } from './orpc'
 
-const { data, isLoading, error } = useQuery(
+const { data, isPending, error } = useQuery(
   orpcUtils.planet.list.queryOptions({ input: { limit: 10 } }),
 )
 </script>
 
 <template>
-  <div v-if="isLoading">Loading...</div>
+  <div v-if="isPending">Loading...</div>
   <div v-else-if="error">{{ error.message }}</div>
   <ul v-else>
     <li v-for="planet in data" :key="planet.id">{{ planet.name }}</li>
@@ -114,7 +114,7 @@ import { orpcUtils } from './orpc'
 
 const queryCache = useQueryCache()
 
-const { mutate, isLoading } = useMutation(
+const { mutate, isPending } = useMutation(
   orpcUtils.planet.create.mutationOptions({
     onSettled: async () => {
       await queryCache.invalidateQueries({
@@ -126,7 +126,7 @@ const { mutate, isLoading } = useMutation(
 </script>
 
 <template>
-  <button :disabled="isLoading" @click="mutate({ name: 'Mars' })">
+  <button :disabled="isPending" @click="mutate({ name: 'Mars' })">
     Create planet
   </button>
 </template>

@@ -259,16 +259,25 @@ Publishes events to multiple async iterator subscribers. Used for SSE/streaming.
 ```typescript
 import { EventPublisher } from '@orpc/server'
 
-const publisher = new EventPublisher<{ type: string; data: unknown }>()
+// Generic type maps event names to their payload shapes
+const publisher = new EventPublisher<{
+  updated: { id: number; name: string }
+  deleted: { id: number }
+}>()
 
-// Subscribe
-const sub = publisher.subscribe()
+// Publish an event (synchronous, returns void)
+publisher.publish('updated', { id: 1, name: 'Earth' })
 
-// Publish events
-publisher.publish({ type: 'update', data: { id: 1 } })
+// Subscribe via async iterator (for use in a procedure handler)
+async function* streamUpdates(signal: AbortSignal) {
+  yield* publisher.subscribe('updated', { signal })
+}
 
-// Complete
-publisher.complete()
+// Subscribe via callback
+const unsubscribe = publisher.subscribe('updated', (payload) => {
+  console.log('Planet updated:', payload)
+})
+unsubscribe() // remove listener
 ```
 
 ---
@@ -368,10 +377,18 @@ Handlers for different runtimes. All support `plugins`.
 
     const handler = new RPCHandler(router)
 
-    export const main = async (event: APIGatewayProxyEventV2) => {
-      const result = await handler.handle(event, { context: {} })
-      return result.response ?? { statusCode: 404 }
-    }
+    // Requires Lambda Response Streaming (awslambda.streamifyResponse)
+    export const main = awslambda.streamifyResponse(
+      async (event, responseStream) => {
+        const result = await handler.handle(event, responseStream, {
+          context: {},
+        })
+        if (!result.matched) {
+          const res = awslambda.HttpResponseStream.from(responseStream, { statusCode: 404 })
+          res.end('Not found')
+        }
+      }
+    )
     ```
   </Tab>
 </Tabs>

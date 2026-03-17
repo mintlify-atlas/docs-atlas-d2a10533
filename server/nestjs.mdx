@@ -70,8 +70,7 @@ Use the `@Implement` decorator in a NestJS controller to wire a method to a cont
 ```ts
 // planet.controller.ts
 import { Controller, Inject } from '@nestjs/common'
-import { Implement } from '@orpc/nest'
-import { implement } from '@orpc/server'
+import { Implement, implement } from '@orpc/nest'
 import { contract } from './contract'
 import { PlanetService } from './planet.service'
 

@@ -108,7 +108,7 @@ Automatically retries failed calls. Supports configurable delays, retry counts, 
 
 ```typescript
 import { RPCLink } from '@orpc/client/fetch'
-import { ClientRetryPlugin } from '@orpc/client'
+import { ClientRetryPlugin } from '@orpc/client/plugins'
 
 const link = new RPCLink({
   url: 'http://localhost:3000/rpc',
@@ -142,12 +142,23 @@ const result = await orpc.planet.list(
 
 ### Other built-in plugins
 
-| Plugin | Import | Description |
-|--------|--------|-------------|
-| `BatchPlugin` | `@orpc/client` | Batches multiple procedure calls into a single HTTP request. |
-| `DedupeRequestsPlugin` | `@orpc/client` | Deduplicates identical in-flight requests. |
-| `RetryAfterPlugin` | `@orpc/client` | Respects the `Retry-After` header from 429/503 responses. |
-| `SimpleCsrfProtectionPlugin` | `@orpc/client` | Adds a custom header to guard against CSRF attacks. |
+All plugins are imported from `@orpc/client/plugins`:
+
+| Plugin | Description |
+|--------|-------------|
+| `BatchLinkPlugin` | Batches multiple procedure calls into a single HTTP request. |
+| `DedupeRequestsPlugin` | Deduplicates identical in-flight requests. |
+| `RetryAfterPlugin` | Respects the `Retry-After` header from 429/503 responses. |
+| `SimpleCsrfProtectionLinkPlugin` | Adds a custom header to guard against CSRF attacks. |
+
+```typescript
+import {
+  BatchLinkPlugin,
+  DedupeRequestsPlugin,
+  RetryAfterPlugin,
+  SimpleCsrfProtectionLinkPlugin,
+} from '@orpc/client/plugins'
+```
 
 ## Interceptors
 
@@ -157,9 +168,9 @@ For lower-level control, use `interceptors` or `clientInterceptors` on `RPCLink`
 const link = new RPCLink({
   url: 'http://localhost:3000/rpc',
   interceptors: [
-    async (options, next) => {
+    async (options) => {
       console.log('Calling', options.path)
-      const result = await next(options)
+      const result = await options.next()
       console.log('Done', options.path)
       return result
     },

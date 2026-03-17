@@ -175,39 +175,34 @@ type RouterUtils<T extends NestedClient<any>>
 
 ## `GeneralUtils`
 
-Every node in the router utils (not just leaf procedures) also exposes general query utilities:
+Every node in the router utils (both procedures and router groups) exposes a `key()` method for generating partial matching query keys — useful for cache invalidation and query filtering.
 
-### `.invalidateQueries(queryClient, options?)`
+### `.key(options?)`
 
-Invalidates all queries under this router node.
+Generates a **partial matching** key for actions like revalidating queries, checking mutation status, etc.
 
 ```typescript
 import { useQueryClient } from '@tanstack/react-query'
 
 const queryClient = useQueryClient()
 
-// Invalidate all planet queries:
-await utils.planet.invalidateQueries(queryClient)
+// Invalidate all planet queries (all types, all inputs):
+await queryClient.invalidateQueries({
+  queryKey: utils.planet.key(),
+})
 
-// Invalidate only list queries:
-await utils.planet.list.invalidateQueries(queryClient)
+// Invalidate all planet.list queries specifically:
+await queryClient.invalidateQueries({
+  queryKey: utils.planet.list.key({ type: 'query' }),
+})
+
+// Invalidate with specific input:
+await queryClient.invalidateQueries({
+  queryKey: utils.planet.list.key({ type: 'query', input: { limit: 10 } }),
+})
 ```
 
-### `.setQueryData(queryClient, input, updater)`
-
-Manually sets query data in the cache.
-
-```typescript
-utils.planet.find.setQueryData(queryClient, { id: 1 }, { id: 1, name: 'Earth' })
-```
-
-### `.getQueryData(queryClient, input)`
-
-Reads query data from the cache.
-
-```typescript
-const planet = utils.planet.find.getQueryData(queryClient, { id: 1 })
-```
+The `key()` method is available at every level of the router utils tree, making it easy to invalidate broad or narrow sets of queries.
 
 ---
 

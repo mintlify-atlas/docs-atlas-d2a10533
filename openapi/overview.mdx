@@ -38,11 +38,11 @@ bun add @orpc/openapi
 
 The `@orpc/openapi` package exports:
 
-- **`OpenAPIGenerator`** — generates OpenAPI 3.1.1 specs from routers or contracts
-- **`OpenAPIHandler`** — serves your API as a standard HTTP handler (fetch, node, fastify, AWS Lambda)
-- **`oo.spec()`** — customize per-procedure OpenAPI operation objects
-- **`OpenAPIReferencePlugin`** — serve Scalar or Swagger UI docs alongside your API
-- **`CompositeSchemaConverter`** — combine multiple schema converters
+- **`OpenAPIGenerator`** — generates OpenAPI 3.1.1 specs from routers or contracts (from `@orpc/openapi`)
+- **`OpenAPIHandler`** — serves your API as a standard HTTP handler, available from adapter subpaths: `@orpc/openapi/fetch`, `@orpc/openapi/node`, `@orpc/openapi/fastify`, `@orpc/openapi/aws-lambda`
+- **`oo.spec()`** — customize per-procedure OpenAPI operation objects (from `@orpc/openapi`)
+- **`OpenAPIReferencePlugin`** — serve Scalar or Swagger UI docs (from `@orpc/openapi/plugins`)
+- **`CompositeSchemaConverter`** — combine multiple schema converters (from `@orpc/openapi`)
 
 ## Schema converters
 

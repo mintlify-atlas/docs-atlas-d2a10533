@@ -207,19 +207,21 @@ const streamContract = oc
 
 ## Implementing a contract
 
-Once you have a contract, implement it with `@orpc/server`:
+Once you have a contract, implement it with `implement()` from `@orpc/server`:
 
 ```typescript
-import { os } from '@orpc/server'
+import { implement } from '@orpc/server'
 import { contract } from './contract'
 
-export const router = os.contract(contract).router({
+const impl = implement(contract)
+
+export const router = impl.router({
   planet: {
-    list: os.handler(async ({ input }) => []),
-    find: os.handler(async ({ input, errors }) => {
+    list: impl.planet.list.handler(async ({ input }) => []),
+    find: impl.planet.find.handler(async ({ input, errors }) => {
       throw errors.NOT_FOUND()
     }),
-    create: os.handler(async ({ input }) => ({ id: 1, ...input })),
+    create: impl.planet.create.handler(async ({ input }) => ({ id: 1, ...input })),
   },
 })
 ```

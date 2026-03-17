@@ -134,7 +134,7 @@ const { mutate, isPending } = useMutation(
   orpcUtils.planet.create.mutationOptions({
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: orpcUtils.planet.list.queryKey(),
+        queryKey: orpcUtils.planet.list.key({ type: 'query' }),
       })
     },
   }),
@@ -150,15 +150,17 @@ const { mutate, isPending } = useMutation(
 
 ## Cache invalidation
 
+Use the `key()` method from `GeneralUtils` to generate partial matching keys:
+
 ```typescript
 const queryClient = useQueryClient()
 
-// All planet.list queries
+// All planet.list queries (all inputs)
 await queryClient.invalidateQueries({
-  queryKey: orpcUtils.planet.list.queryKey(),
+  queryKey: orpcUtils.planet.list.key({ type: 'query' }),
 })
 
-// All planet queries
+// All planet queries (all procedures under planet)
 await queryClient.invalidateQueries({
   queryKey: orpcUtils.planet.key(),
 })

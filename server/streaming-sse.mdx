@@ -60,7 +60,7 @@ const subscribe = os
 const publishUpdate = os
   .input(z.object({ id: z.number(), name: z.string() }))
   .handler(async ({ input }) => {
-    await publisher.publish('planetUpdated', input)
+    publisher.publish('planetUpdated', input)
   })
 ```
 

@@ -145,7 +145,7 @@ export function CreatePlanetForm() {
     orpcUtils.planet.create.mutationOptions({
       onSuccess: async () => {
         await queryClient.invalidateQueries({
-          queryKey: orpcUtils.planet.list.queryKey(),
+          queryKey: orpcUtils.planet.list.key({ type: 'query' }),
         })
       },
     }),
@@ -192,20 +192,22 @@ For server-side usage, create a separate oRPC client that calls your handlers di
 
 ## Cache invalidation
 
+Use the `key()` method from `GeneralUtils` to generate partial matching keys for invalidation:
+
 ```typescript
 const queryClient = useQueryClient()
 
-// Specific query
+// Specific query with input filter
 await queryClient.invalidateQueries({
-  queryKey: orpcUtils.planet.list.queryKey({ input: { limit: 10 } }),
+  queryKey: orpcUtils.planet.list.key({ type: 'query', input: { limit: 10 } }),
 })
 
-// All queries for a procedure
+// All queries for a procedure (all inputs)
 await queryClient.invalidateQueries({
-  queryKey: orpcUtils.planet.list.queryKey(),
+  queryKey: orpcUtils.planet.list.key({ type: 'query' }),
 })
 
-// All planet queries
+// All planet queries (all procedures under planet)
 await queryClient.invalidateQueries({
   queryKey: orpcUtils.planet.key(),
 })

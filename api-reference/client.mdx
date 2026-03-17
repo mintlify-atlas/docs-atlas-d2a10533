@@ -65,8 +65,7 @@ if (error) {
 The standard link for calling oRPC servers over HTTP.
 
 ```typescript
-import { RPCLink } from '@orpc/client/fetch'  // for Fetch/Edge runtimes
-import { RPCLink } from '@orpc/client/node'   // for Node.js
+import { RPCLink } from '@orpc/client/fetch'  // for Fetch, Edge, and Node.js 18+
 ```
 
 ### Constructor options
@@ -217,31 +216,44 @@ if (error) {
 
 ### Return type
 
+A 4-tuple (also accessible as named properties):
+
 ```typescript
 type SafeResult<TOutput, TError> =
-  | [error: null, data: TOutput, isDefined: false]
-  | [error: TError, data: undefined, isDefined: boolean]
+  // Success
+  | [error: null, data: TOutput, isDefined: false, isSuccess: true]
+  // Undefined (untyped) error
+  | [error: Exclude<TError, ORPCError<any, any>>, data: undefined, isDefined: false, isSuccess: false]
+  // Defined (typed) ORPCError
+  | [error: Extract<TError, ORPCError<any, any>>, data: undefined, isDefined: true, isSuccess: false]
 ```
+
+Each element is also available as a named property: `result.error`, `result.data`, `result.isDefined`, `result.isSuccess`.
 
 ---
 
-## Client plugin types
+## Client plugins
 
-Plugins intercept client requests and responses:
+Client plugins implement the `StandardLinkPlugin<T>` interface from `@orpc/client/standard`. Built-in plugins are available from `@orpc/client/plugins`:
 
 ```typescript
-interface ClientPlugin {
-  before?: (options: ClientInterceptorOptions) => Promisable<void>
-  after?: (options: ClientInterceptorOptions, response: unknown) => Promisable<void>
-  onError?: (options: ClientInterceptorOptions, error: unknown) => Promisable<void>
-}
+import {
+  ClientRetryPlugin,
+  BatchLinkPlugin,
+  DedupeRequestsPlugin,
+  RetryAfterPlugin,
+  SimpleCsrfProtectionLinkPlugin,
+} from '@orpc/client/plugins'
 ```
 
 Pass plugins to `RPCLink`:
 
 ```typescript
-new RPCLink({
+import { RPCLink } from '@orpc/client/fetch'
+import { ClientRetryPlugin } from '@orpc/client/plugins'
+
+const link = new RPCLink({
   url: 'https://api.example.com',
-  plugins: [myPlugin],
+  plugins: [new ClientRetryPlugin({ default: { retry: 3 } })],
 })
 ```
