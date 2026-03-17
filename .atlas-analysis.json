@@ -1,0 +1,189 @@
+{
+  "projectType": "framework",
+  "projectName": "oRPC",
+  "projectDescription": "A TypeScript framework for building end-to-end type-safe RPC APIs with first-class OpenAPI support, contract-first development, and integrations for React, Vue, Solid, Svelte, and more.",
+  "theme": "sequoia",
+  "primaryColor": "#141c1c",
+  "lightColor": "#cba8f4",
+  "darkColor": "#9177b1",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Getting Started",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "why-orpc"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/procedures",
+              "concepts/routers",
+              "concepts/middleware",
+              "concepts/context",
+              "concepts/error-handling",
+              "concepts/lazy-router"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Server",
+        "groups": [
+          {
+            "group": "Building Your API",
+            "pages": [
+              "server/overview",
+              "server/procedures",
+              "server/routers",
+              "server/middleware",
+              "server/context",
+              "server/errors"
+            ]
+          },
+          {
+            "group": "Contract-First",
+            "pages": [
+              "server/contract/overview",
+              "server/contract/defining",
+              "server/contract/implementing"
+            ]
+          },
+          {
+            "group": "Adapters",
+            "pages": [
+              "server/adapters/fetch",
+              "server/adapters/node",
+              "server/adapters/fastify",
+              "server/adapters/aws-lambda",
+              "server/adapters/cloudflare"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "server/plugins/cors",
+              "server/plugins/batch",
+              "server/plugins/csrf-protection",
+              "server/plugins/response-headers"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "server/server-actions",
+              "server/streaming-sse",
+              "server/websockets",
+              "server/opentelemetry",
+              "server/nestjs"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Client",
+        "groups": [
+          {
+            "group": "Client Setup",
+            "pages": [
+              "client/overview",
+              "client/rpc-client",
+              "client/links",
+              "client/error-handling"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "client/tanstack-query",
+              "client/react-query",
+              "client/vue-query",
+              "client/solid-query",
+              "client/svelte-query",
+              "client/swr",
+              "client/vue-colada"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "OpenAPI",
+        "groups": [
+          {
+            "group": "OpenAPI",
+            "pages": [
+              "openapi/overview",
+              "openapi/generating-spec",
+              "openapi/serving-ui",
+              "openapi/schema-converters",
+              "openapi/customization"
+            ]
+          },
+          {
+            "group": "Schema Validators",
+            "pages": [
+              "openapi/schemas/zod",
+              "openapi/schemas/valibot",
+              "openapi/schemas/arktype"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Packages",
+            "pages": [
+              "api-reference/server",
+              "api-reference/client",
+              "api-reference/contract",
+              "api-reference/openapi",
+              "api-reference/tanstack-query",
+              "api-reference/react",
+              "api-reference/otel"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "End-to-end TypeScript type safety from server to client",
+    "First-class OpenAPI spec generation",
+    "Contract-first API development with @orpc/contract",
+    "Middleware and plugin system",
+    "Multi-runtime support: Node.js, Bun, Deno, Cloudflare Workers",
+    "Framework integrations: TanStack Query, SWR, Pinia Colada",
+    "Server Actions support for Next.js and TanStack Start",
+    "Streaming and SSE with full type safety",
+    "Standard Schema support: Zod, Valibot, ArkType",
+    "OpenTelemetry integration for observability",
+    "Lazy router for improved cold start performance",
+    "WebSocket support via crossws, ws, and Bun WebSocket"
+  ],
+  "publicApiSurface": [
+    "os (Builder) - @orpc/server",
+    "oc (ContractBuilder) - @orpc/contract",
+    "RPCHandler - @orpc/server/node, /fetch, /fastify, /aws-lambda",
+    "createORPCClient - @orpc/client",
+    "RPCLink - @orpc/client/fetch",
+    "OpenAPIGenerator - @orpc/openapi",
+    "OpenAPIHandler - @orpc/openapi",
+    "ORPCError - @orpc/client",
+    "RouterClient<T> - @orpc/server",
+    "useQuery / useMutation (orpc utils) - @orpc/tanstack-query",
+    "CORSPlugin - @orpc/server/plugins",
+    "BatchPlugin - @orpc/server/plugins",
+    "ORPCInstrumentation - @orpc/otel",
+    "implement() - @orpc/nest",
+    "orpcAction / experimental_orpcAction - @orpc/react",
+    "ZodToJsonSchemaConverter - @orpc/zod",
+    "eventIterator - @orpc/contract"
+  ]
+}
