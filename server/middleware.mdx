@@ -1,0 +1,134 @@
+---
+title: Middleware
+description: Intercept the procedure pipeline to authenticate, log, transform context, and more.
+---
+
+Middleware in oRPC wraps around procedure handlers and runs in a pipeline. Each middleware receives the current context, the validated input, and a `next()` function to call the next layer.
+
+## Creating middleware
+
+Use `os.middleware()` to get full type inference:
+
+```ts
+import { os } from '@orpc/server'
+
+const loggerMiddleware = os.middleware(async ({ context, next, path }) => {
+  console.log('Calling:', path)
+  const result = await next()
+  console.log('Done:', path)
+  return result
+})
+```
+
+Middleware functions receive:
+
+| Property    | Description                                      |
+|-------------|--------------------------------------------------|
+| `context`   | The current context                              |
+| `next`      | Call the next middleware / handler               |
+| `path`      | Procedure path segments                          |
+| `procedure` | The procedure object                             |
+| `input`     | The (possibly partially validated) input         |
+| `errors`    | Typed error constructors                         |
+| `meta`      | Procedure metadata                               |
+| `signal`    | AbortSignal                                      |
+
+## Context transformation
+
+Middleware can enrich the context by passing additional properties to `next()`:
+
+```ts
+import { ORPCError, os } from '@orpc/server'
+
+const authMiddleware = os
+  .$context<{ headers: Record<string, string | undefined> }>()
+  .middleware(async ({ context, next }) => {
+    const token = context.headers.authorization?.split(' ')[1]
+    const user = token ? await verifyToken(token) : null
+
+    if (!user) {
+      throw new ORPCError('UNAUTHORIZED')
+    }
+
+    return next({
+      context: { user }, // merged into current context
+    })
+  })
+```
+
+The returned context from `next()` is **merged** with the existing context, not replaced.
+
+## Using middleware
+
+### On a builder (applies to all derived procedures)
+
+```ts
+const authedBuilder = os
+  .$context<{ headers: Record<string, string | undefined> }>()
+  .use(authMiddleware)
+
+const protectedProcedure = authedBuilder
+  .input(z.object({ id: z.number() }))
+  .handler(async ({ input, context }) => {
+    // context.user is available here
+    return { id: input.id }
+  })
+```
+
+### On a procedure
+
+```ts
+const procedure = os
+  .use(loggerMiddleware)
+  .use(authMiddleware)
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input, context }) => {
+    return { name: input.name }
+  })
+```
+
+Middleware runs in the order it is added (outermost first).
+
+## Input mapping with `mapInput`
+
+When `.input()` has been called on the builder, middleware after it receives the **parsed** input. If you need to pass a middleware that expects a different input shape, use the second argument to `.use()`:
+
+```ts
+const procedure = os
+  .input(z.object({ userId: z.string() }))
+  .use(
+    userLookupMiddleware, // expects { id: string }
+    (input) => ({ id: input.userId }), // mapInput: transform input before middleware
+  )
+  .handler(async ({ input, context }) => {
+    // context.user is set by userLookupMiddleware
+    return context.user
+  })
+```
+
+## Middleware concatenation
+
+`DecoratedMiddleware` instances (created via `os.middleware()`) support `.concat()` to chain two middlewares into one:
+
+```ts
+const combined = loggerMiddleware.concat(authMiddleware)
+```
+
+You can also use `.mapInput()` on a `DecoratedMiddleware` to change what input shape it expects.
+
+## Inline middleware
+
+You can pass middleware implementations inline without `os.middleware()`:
+
+```ts
+const procedure = os
+  .use(async ({ context, next }) => {
+    // inline middleware
+    return next()
+  })
+  .handler(async () => 'ok')
+```
+
+<Tip>
+  Create reusable middleware with `os.middleware()` so they get full TypeScript inference. Inline middleware is convenient for one-off logic.
+</Tip>

@@ -1,0 +1,168 @@
+---
+title: 'Links'
+description: 'Configure how the oRPC client communicates with your server using RPCLink, DynamicLink, and plugins.'
+---
+
+A **link** is the transport layer that carries procedure calls from the client to the server. oRPC ships with two built-in links and a plugin system for cross-cutting concerns.
+
+## RPCLink
+
+`RPCLink` (from `@orpc/client/fetch`) is the standard link for communicating with an oRPC server over HTTP using the oRPC binary protocol.
+
+```typescript
+import { RPCLink } from '@orpc/client/fetch'
+
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+})
+```
+
+### Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `url` | `string \| URL` | The base URL of your oRPC handler. |
+| `headers` | `HeadersInit \| (path, input) => HeadersInit \| Promise<HeadersInit>` | Static or dynamic headers sent with every request. |
+| `fetch` | `(request, init, options, path, input) => Promise<Response>` | Custom fetch function — override for mocking, retries, or environments without a global `fetch`. |
+| `plugins` | `LinkFetchPlugin[]` | Link plugins (see below). |
+| `interceptors` | `Interceptor[]` | Low-level request/response interceptors. |
+| `clientInterceptors` | `Interceptor[]` | Interceptors that run just before and after the HTTP call. |
+
+### Adding authorization headers
+
+```typescript
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+  headers: () => ({
+    Authorization: `Bearer ${getToken()}`,
+  }),
+})
+```
+
+The `headers` option can be a function so that the token is read fresh on every request.
+
+### Custom fetch function
+
+```typescript
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+  fetch: (request, init) => {
+    // log, mock, or forward to a custom fetch
+    return globalThis.fetch(request, init)
+  },
+})
+```
+
+### Abort signals
+
+Pass a signal per call to cancel inflight requests:
+
+```typescript
+const controller = new AbortController()
+
+const planets = await orpc.planet.list(
+  { limit: 10 },
+  { signal: controller.signal },
+)
+
+// Cancel:
+controller.abort()
+```
+
+## DynamicLink
+
+`DynamicLink` lets you choose which link to use at call time, based on the procedure path, input, or context. This is useful when you want to route some procedures to a different server or use a different protocol.
+
+```typescript
+import { createORPCClient, DynamicLink } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+
+const defaultLink = new RPCLink({ url: 'http://api.example.com/rpc' })
+const adminLink = new RPCLink({ url: 'http://admin.example.com/rpc' })
+
+const link = new DynamicLink((options, path, input) => {
+  // Route admin procedures to a different server
+  if (path[0] === 'admin') {
+    return adminLink
+  }
+  return defaultLink
+})
+
+const orpc = createORPCClient(link)
+```
+
+The resolver receives:
+- `options` — `ClientOptions` (includes `context` and `signal`)
+- `path` — the procedure path as a `readonly string[]`
+- `input` — the raw input value
+
+It can return the link synchronously or as a `Promise`.
+
+## Client plugins
+
+Plugins extend links with cross-cutting behaviour. Pass them in the `plugins` array when constructing an `RPCLink`.
+
+### ClientRetryPlugin
+
+Automatically retries failed calls. Supports configurable delays, retry counts, and a `shouldRetry` predicate.
+
+```typescript
+import { RPCLink } from '@orpc/client/fetch'
+import { ClientRetryPlugin } from '@orpc/client'
+
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+  plugins: [
+    new ClientRetryPlugin({
+      default: {
+        retry: 3, // retry up to 3 times
+        retryDelay: attempt => Math.min(1000 * 2 ** attempt.attemptIndex, 30_000),
+        shouldRetry: ({ error }) => !(error instanceof ORPCError && error.status < 500),
+      },
+    }),
+  ],
+})
+```
+
+You can also control retry behaviour per call via context:
+
+```typescript
+const result = await orpc.planet.list(
+  { limit: 10 },
+  {
+    context: {
+      retry: 5,
+      retryDelay: 1000,
+    },
+  },
+)
+```
+
+`retry` accepts `Number.POSITIVE_INFINITY` for event iterator (SSE) connections that should reconnect indefinitely.
+
+### Other built-in plugins
+
+| Plugin | Import | Description |
+|--------|--------|-------------|
+| `BatchPlugin` | `@orpc/client` | Batches multiple procedure calls into a single HTTP request. |
+| `DedupeRequestsPlugin` | `@orpc/client` | Deduplicates identical in-flight requests. |
+| `RetryAfterPlugin` | `@orpc/client` | Respects the `Retry-After` header from 429/503 responses. |
+| `SimpleCsrfProtectionPlugin` | `@orpc/client` | Adds a custom header to guard against CSRF attacks. |
+
+## Interceptors
+
+For lower-level control, use `interceptors` or `clientInterceptors` on `RPCLink`:
+
+```typescript
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+  interceptors: [
+    async (options, next) => {
+      console.log('Calling', options.path)
+      const result = await next(options)
+      console.log('Done', options.path)
+      return result
+    },
+  ],
+})
+```

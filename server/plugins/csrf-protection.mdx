@@ -1,0 +1,56 @@
+---
+title: CSRF Protection Plugin
+description: Prevent cross-site request forgery with SimpleCsrfProtectionHandlerPlugin.
+---
+
+The `SimpleCsrfProtectionHandlerPlugin` adds basic CSRF protection to your oRPC server. It ensures requests originate from JavaScript code rather than native browser form submissions or direct navigation.
+
+## How it works
+
+The plugin checks for a custom header (`x-csrf-token: orpc` by default) on every request. Native browser form submissions and direct URL navigation cannot set custom headers, so they are blocked. JavaScript `fetch()` calls can set this header freely.
+
+<Note>
+  This is a lightweight "is this from JavaScript?" check, not a full token-based CSRF system. It is sufficient for API endpoints consumed exclusively by JavaScript clients.
+</Note>
+
+## Usage
+
+```ts
+import { RPCHandler } from '@orpc/server/node'
+import { SimpleCsrfProtectionHandlerPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [
+    new SimpleCsrfProtectionHandlerPlugin(),
+  ],
+})
+```
+
+On the client, the oRPC client automatically adds the `x-csrf-token: orpc` header when using the standard `RPCLink`.
+
+## Options
+
+<ParamField body="headerName" type="string | ((options) => Promisable<string>)" default="'x-csrf-token'">
+  The header name to check.
+</ParamField>
+
+<ParamField body="headerValue" type="string | ((options) => Promisable<string>)" default="'orpc'">
+  The expected header value.
+</ParamField>
+
+<ParamField body="exclude" type="boolean | ((procedureOptions) => Promisable<boolean>)" default="false">
+  Exclude specific procedures from CSRF protection. Useful for webhooks or public health-check endpoints.
+
+  ```ts
+  new SimpleCsrfProtectionHandlerPlugin({
+    exclude: async ({ path }) => path.join('.') === 'webhook.receive',
+  })
+  ```
+</ParamField>
+
+<ParamField body="error" type="ORPCError">
+  The error thrown when the CSRF token is invalid.
+
+  Default: `new ORPCError('CSRF_TOKEN_MISMATCH', { status: 403, message: 'Invalid CSRF token' })`
+</ParamField>

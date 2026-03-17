@@ -1,0 +1,105 @@
+---
+title: "Lazy routers"
+description: "Lazy routers defer loading a sub-router until the first request hits it, reducing cold start times in serverless and edge environments."
+---
+
+When your API grows large, importing every router module at startup can meaningfully increase cold start times — especially on serverless platforms like Cloudflare Workers, AWS Lambda, and Vercel Edge Functions where every millisecond of initialization counts.
+
+**Lazy routers** solve this by wrapping a sub-router in a dynamic `import()` that only runs the first time a request matches a procedure in that sub-router.
+
+## How it works
+
+The `lazy()` function from `@orpc/server` wraps a dynamic import into a `Lazy<T>` object. oRPC recognizes this wrapper and defers loading until the router is actually needed:
+
+```typescript
+import { lazy } from '@orpc/server'
+
+export const router = {
+  planet: lazy(() =>
+    import('./routers/planet').then(m => ({ default: m.planetRouter }))
+  ),
+  star: lazy(() =>
+    import('./routers/star').then(m => ({ default: m.starRouter }))
+  ),
+}
+```
+
+<Note>
+  The dynamic import must return `{ default: router }` — the same shape as an ES module default export. Use `.then(m => ({ default: m.yourExport }))` when your export is not the default.
+</Note>
+
+## Lazy with `os.lazy()`
+
+You can also apply middleware and other options to a lazy router using `os.lazy()`:
+
+```typescript
+import { os } from '@orpc/server'
+
+export const router = {
+  planet: os
+    .use(authMiddleware) // middleware applied when the router eventually loads
+    .lazy(() => import('./routers/planet').then(m => ({ default: m.planetRouter }))),
+}
+```
+
+## Lazy type
+
+The `Lazy<T>` interface wraps any router type:
+
+```typescript
+export interface Lazy<T> {
+  [LAZY_SYMBOL]: {
+    loader: () => Promise<{ default: T }>
+    meta: LazyMeta
+  }
+}
+```
+
+Because `Lazy<U>` is accepted anywhere a `Router` is accepted (as `Lazyable<Router>`), your client types and OpenAPI spec remain identical whether or not a sub-router is lazy.
+
+## When to use lazy loading
+
+Lazy routers are most beneficial when:
+
+- You are deploying to a **serverless or edge environment** where cold starts are measured and billed.
+- Your router tree has **large sub-routers** that are infrequently called (e.g., admin APIs, reporting endpoints).
+- You import **heavy third-party libraries** (database drivers, PDF generators, etc.) inside specific routers.
+
+For long-running servers (traditional Node.js, Bun, Deno processes), lazy loading provides little benefit because the process stays warm between requests.
+
+## Example: splitting a large router
+
+Before:
+
+```typescript router.ts
+import { planetRouter } from './routers/planet' // loaded eagerly
+import { starRouter } from './routers/star'     // loaded eagerly
+import { adminRouter } from './routers/admin'   // loaded eagerly — slow!
+
+export const router = {
+  planet: planetRouter,
+  star: starRouter,
+  admin: adminRouter,
+}
+```
+
+After:
+
+```typescript router.ts
+import { lazy } from '@orpc/server'
+import { planetRouter } from './routers/planet' // still eager — used on every request
+import { starRouter } from './routers/star'     // still eager — used on every request
+
+export const router = {
+  planet: planetRouter,
+  star: starRouter,
+  // admin is only loaded when an /admin/* procedure is first called
+  admin: lazy(() =>
+    import('./routers/admin').then(m => ({ default: m.adminRouter }))
+  ),
+}
+```
+
+<Tip>
+  Keep your most frequently accessed routers eager. Apply `lazy()` selectively to infrequent or heavyweight sub-routers for the best balance of startup speed and runtime performance.
+</Tip>

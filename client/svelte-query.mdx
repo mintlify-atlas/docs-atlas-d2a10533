@@ -1,0 +1,165 @@
+---
+title: 'Svelte Query'
+description: 'Integrate oRPC with TanStack Query in Svelte using @orpc/svelte-query.'
+---
+
+`@orpc/svelte-query` provides Svelte-specific utilities for TanStack Query, wrapping `@tanstack/svelte-query` so that `createQuery`, `createInfiniteQuery`, and `createMutation` receive fully typed options generated from your oRPC client.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @orpc/svelte-query @tanstack/svelte-query
+```
+
+```bash yarn
+yarn add @orpc/svelte-query @tanstack/svelte-query
+```
+
+```bash pnpm
+pnpm add @orpc/svelte-query @tanstack/svelte-query
+```
+
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Create your oRPC client">
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+const link = new RPCLink({ url: '/rpc' })
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+  </Step>
+  <Step title="Create Svelte Query utils">
+
+```typescript
+import { createORPCSvelteQueryUtils } from '@orpc/svelte-query'
+import { orpc } from './client'
+
+export const orpcUtils = createORPCSvelteQueryUtils(orpc)
+```
+
+  </Step>
+  <Step title="Set up QueryClient in your root layout">
+
+```svelte
+<!-- +layout.svelte -->
+<script lang="ts">
+  import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query'
+
+  const queryClient = new QueryClient()
+</script>
+
+<QueryClientProvider client={queryClient}>
+  <slot />
+</QueryClientProvider>
+```
+
+  </Step>
+</Steps>
+
+## createQuery
+
+```svelte
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query'
+  import { orpcUtils } from './orpc'
+
+  const query = createQuery(
+    orpcUtils.planet.list.queryOptions({ input: { limit: 10 } }),
+  )
+</script>
+
+{#if $query.isLoading}
+  <p>Loading...</p>
+{:else if $query.error}
+  <p>Error: {$query.error.message}</p>
+{:else}
+  <ul>
+    {#each $query.data ?? [] as planet (planet.id)}
+      <li>{planet.name}</li>
+    {/each}
+  </ul>
+{/if}
+```
+
+## createInfiniteQuery
+
+```svelte
+<script lang="ts">
+  import { createInfiniteQuery } from '@tanstack/svelte-query'
+  import { orpcUtils } from './orpc'
+
+  const query = createInfiniteQuery(
+    orpcUtils.planet.list.infiniteOptions({
+      input: pageParam => ({ cursor: pageParam, limit: 10 }),
+      initialPageParam: 0,
+      getNextPageParam: lastPage => lastPage.nextCursor,
+    }),
+  )
+</script>
+
+{#each $query.data?.pages.flat() ?? [] as planet (planet.id)}
+  <div>{planet.name}</div>
+{/each}
+
+<button
+  on:click={() => $query.fetchNextPage()}
+  disabled={!$query.hasNextPage}
+>
+  Load more
+</button>
+```
+
+## createMutation
+
+```svelte
+<script lang="ts">
+  import { createMutation, useQueryClient } from '@tanstack/svelte-query'
+  import { orpcUtils } from './orpc'
+
+  const queryClient = useQueryClient()
+
+  const mutation = createMutation(
+    orpcUtils.planet.create.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: orpcUtils.planet.list.queryKey(),
+        })
+      },
+    }),
+  )
+</script>
+
+<button
+  on:click={() => $mutation.mutate({ name: 'Mars' })}
+  disabled={$mutation.isPending}
+>
+  Create planet
+</button>
+```
+
+## Cache invalidation
+
+```typescript
+const queryClient = useQueryClient()
+
+// Invalidate a specific query
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.list.queryKey(),
+})
+
+// Invalidate all planet queries
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.key(),
+})
+```

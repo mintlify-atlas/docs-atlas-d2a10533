@@ -1,0 +1,225 @@
+---
+title: "@orpc/contract"
+description: Complete API reference for the @orpc/contract package — defining API contracts independently of implementation.
+---
+
+The `@orpc/contract` package lets you define the shape of your API (inputs, outputs, errors, routes) as a standalone contract, decoupled from any implementation. This supports contract-first development where the API surface is defined once and shared between server and client.
+
+```typescript
+import { oc } from '@orpc/contract'
+```
+
+## `oc` — the contract builder
+
+`oc` is the root `ContractBuilder` instance.
+
+### Builder methods
+
+#### `.$meta<TMeta>(initialMeta)`
+
+Sets the initial metadata type for contract procedures.
+
+#### `.$route(initialRoute)`
+
+Sets the initial route definition for the builder.
+
+#### `.$input<TSchema>(initialSchema)`
+
+Sets the initial input schema.
+
+#### `.errors(errorMap)`
+
+Registers type-safe errors on the contract.
+
+```typescript
+const withErrors = oc.errors({
+  NOT_FOUND: { status: 404, message: 'Not found' },
+  FORBIDDEN: { status: 403 },
+})
+```
+
+#### `.meta(meta)`
+
+Sets or merges metadata.
+
+#### `.route(route)`
+
+Sets or merges route options.
+
+```typescript
+oc.route({
+  method: 'GET',
+  path: '/planets',
+  tags: ['planets'],
+  summary: 'List all planets',
+})
+```
+
+#### `.input(schema)`
+
+Defines the input validation schema for a contract procedure.
+
+```typescript
+import * as z from 'zod'
+
+const contract = oc.input(
+  z.object({ limit: z.number().int().max(100).optional() })
+)
+```
+
+#### `.output(schema)`
+
+Defines the output validation schema for a contract procedure.
+
+```typescript
+const contract = oc
+  .input(z.object({ id: z.number() }))
+  .output(z.object({ id: z.number(), name: z.string() }))
+```
+
+#### `.prefix(path)`
+
+Prefixes all procedures in a contract router with the given path.
+
+#### `.tag(...tags)`
+
+Adds OpenAPI tags to all procedures in a contract router.
+
+#### `.router(contractRouter)`
+
+Applies all accumulated options to a contract router.
+
+```typescript
+const apiContract = oc
+  .prefix('/api')
+  .tag('planets')
+  .router({
+    planet: {
+      list: oc.input(ListInputSchema).output(ListOutputSchema),
+      create: oc.input(CreateInputSchema).output(PlanetSchema),
+    },
+  })
+```
+
+---
+
+## Full contract example
+
+```typescript
+import { oc } from '@orpc/contract'
+import * as z from 'zod'
+
+const PlanetSchema = z.object({
+  id: z.number().int().min(1),
+  name: z.string(),
+  description: z.string().optional(),
+})
+
+export const contract = oc.router({
+  planet: {
+    list: oc
+      .route({ method: 'GET', path: '/planets' })
+      .input(z.object({ limit: z.number().optional() }))
+      .output(z.array(PlanetSchema)),
+
+    find: oc
+      .route({ method: 'GET', path: '/planets/{id}' })
+      .input(z.object({ id: z.number() }))
+      .output(PlanetSchema)
+      .errors({ NOT_FOUND: { status: 404 } }),
+
+    create: oc
+      .route({ method: 'POST', path: '/planets', successStatus: 201 })
+      .input(PlanetSchema.omit({ id: true }))
+      .output(PlanetSchema),
+  },
+})
+```
+
+---
+
+## `ContractProcedure`
+
+Represents a single contract procedure definition.
+
+```typescript
+class ContractProcedure<TInputSchema, TOutputSchema, TErrorMap, TMeta> {
+  '~orpc': ContractProcedureDef<TInputSchema, TOutputSchema, TErrorMap, TMeta>
+}
+
+interface ContractProcedureDef<TInputSchema, TOutputSchema, TErrorMap, TMeta> {
+  meta: TMeta
+  route: Route
+  inputSchema?: TInputSchema
+  outputSchema?: TOutputSchema
+  errorMap: TErrorMap
+}
+```
+
+---
+
+## `ContractRouter`
+
+A recursive type representing either a `ContractProcedure` or a nested object of them.
+
+```typescript
+type ContractRouter<TMeta extends Meta>
+  = | ContractProcedure<any, any, any, TMeta>
+    | { [k: string]: ContractRouter<TMeta> }
+```
+
+---
+
+## Utility types
+
+### `InferContractRouterInputs<T>`
+
+Infers all input types from a contract router.
+
+```typescript
+type Inputs = InferContractRouterInputs<typeof contract>
+// => { planet: { list: { limit?: number }, find: { id: number }, create: { name: string } } }
+```
+
+### `InferContractRouterOutputs<T>`
+
+Infers all output types from a contract router.
+
+### `InferContractRouterErrorMap<T>`
+
+Infers the union of all error maps from a contract router.
+
+---
+
+## `eventIterator()`
+
+Declares that a procedure's input or output is an async event iterator (for SSE/streaming).
+
+```typescript
+import { eventIterator } from '@orpc/contract'
+import * as z from 'zod'
+
+const streamContract = oc
+  .output(eventIterator(z.object({ type: z.string(), data: z.unknown() })))
+```
+
+---
+
+## Implementing a contract
+
+Once you have a contract, implement it with `@orpc/server`:
+
+```typescript
+import { os } from '@orpc/server'
+import { contract } from './contract'
+
+export const router = os.contract(contract).router({
+  planet: {
+    list: os.handler(async ({ input }) => []),
+    find: os.handler(async ({ input, errors }) => {
+      throw errors.NOT_FOUND()
+    }),
+    create: os.handler(async ({ input }) => ({ id: 1, ...input })),
+  },
+})
+```

@@ -1,0 +1,139 @@
+---
+title: Routers
+description: Compose procedures into type-safe, nested router objects.
+---
+
+A **router** is a plain object that organizes procedures into a hierarchy. Any plain object containing procedures (or nested objects of procedures) is a valid router.
+
+## Defining a router
+
+```ts
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+const listPlanets = os
+  .input(z.object({ limit: z.number().optional() }))
+  .handler(async ({ input }) => [{ id: 1, name: 'Earth' }])
+
+const findPlanet = os
+  .input(z.object({ id: z.number() }))
+  .handler(async ({ input }) => ({ id: input.id, name: 'Earth' }))
+
+const createPlanet = os
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input }) => ({ id: 2, name: input.name }))
+
+export const router = {
+  planet: {
+    list: listPlanets,
+    find: findPlanet,
+    create: createPlanet,
+  },
+}
+```
+
+The router structure maps directly to the client API: `orpc.planet.list(...)`, `orpc.planet.find(...)`, etc.
+
+## `os.router()` for type safety
+
+You can use `os.router()` to validate that a router conforms to a contract and to propagate middleware/context/error types across the whole sub-tree:
+
+```ts
+import { os } from '@orpc/server'
+
+const base = os.$context<{ userId: string }>()
+
+export const router = base.router({
+  planet: {
+    list: listPlanets,
+    find: findPlanet,
+  },
+})
+```
+
+This is equivalent to writing the plain object, but oRPC will enforce that every procedure in the router accepts the declared initial context.
+
+## `os.prefix()`
+
+Prepends an HTTP path prefix to every procedure in the router (relevant for OpenAPI route generation):
+
+```ts
+const planetRouter = os
+  .prefix('/planets')
+  .router({
+    list: listPlanets,   // route path becomes /planets/list (or whatever is defined)
+    find: findPlanet,
+  })
+```
+
+<Note>
+  Prefixes only affect procedures that have a `path` defined in their `.route()` call. Procedures without an explicit path use the router key hierarchy for RPC routing.
+</Note>
+
+## `os.tag()`
+
+Adds OpenAPI tags to every procedure in a router, useful for grouping operations in generated docs:
+
+```ts
+const planetRouter = os
+  .tag('planets')
+  .router({
+    list: listPlanets,
+    find: findPlanet,
+  })
+```
+
+## Lazy routers
+
+For large applications, you can load router modules on demand to improve cold-start times:
+
+```ts
+const router = {
+  planet: os.lazy(() => import('./planet-router')),
+  user: os.lazy(() => import('./user-router')),
+}
+```
+
+The lazy module must have a `default` export that is the router:
+
+```ts
+// planet-router.ts
+export default {
+  list: listPlanets,
+  find: findPlanet,
+}
+```
+
+## Type utilities
+
+### `RouterClient<T>`
+
+Infers the client-side type of a router, used when creating a typed client:
+
+```ts
+import type { RouterClient } from '@orpc/server'
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+
+const link = new RPCLink({ url: 'http://localhost:3000' })
+
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+### `InferRouterInputs<T>` and `InferRouterOutputs<T>`
+
+Extract all input and output types from a router:
+
+```ts
+import type { InferRouterInputs, InferRouterOutputs } from '@orpc/server'
+
+type Inputs = InferRouterInputs<typeof router>
+// Inputs['planet']['list'] is the list procedure's input type
+
+type Outputs = InferRouterOutputs<typeof router>
+// Outputs['planet']['find'] is the find procedure's output type
+```
+
+### `InferRouterInitialContexts<T>` and `InferRouterCurrentContexts<T>`
+
+For advanced use cases, these types extract the context types for every leaf procedure in the router tree.

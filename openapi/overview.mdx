@@ -1,0 +1,107 @@
+---
+title: OpenAPI Overview
+description: Generate OpenAPI specifications and serve OpenAPI-compatible endpoints with oRPC's built-in first-class support.
+---
+
+oRPC has built-in, first-class OpenAPI support through the `@orpc/openapi` package. It provides two primary capabilities:
+
+<CardGroup cols={2}>
+  <Card title="Spec Generation" icon="file-code" href="/openapi/generating-spec">
+    Convert any oRPC router or contract into a valid OpenAPI 3.1.1 document.
+  </Card>
+  <Card title="OpenAPI Handler" icon="server" href="/openapi/serving-ui">
+    Serve your router as a standard HTTP/OpenAPI-compatible API — no RPC client required.
+  </Card>
+</CardGroup>
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/openapi
+```
+
+```bash pnpm
+pnpm add @orpc/openapi
+```
+
+```bash yarn
+yarn add @orpc/openapi
+```
+
+```bash bun
+bun add @orpc/openapi
+```
+</CodeGroup>
+
+## What's included
+
+The `@orpc/openapi` package exports:
+
+- **`OpenAPIGenerator`** — generates OpenAPI 3.1.1 specs from routers or contracts
+- **`OpenAPIHandler`** — serves your API as a standard HTTP handler (fetch, node, fastify, AWS Lambda)
+- **`oo.spec()`** — customize per-procedure OpenAPI operation objects
+- **`OpenAPIReferencePlugin`** — serve Scalar or Swagger UI docs alongside your API
+- **`CompositeSchemaConverter`** — combine multiple schema converters
+
+## Schema converters
+
+OpenAPI spec generation requires a schema converter to translate your validation schemas (Zod, Valibot, ArkType) into JSON Schema. These come from separate packages:
+
+<CardGroup cols={3}>
+  <Card title="Zod" icon="z" href="/openapi/schemas/zod">
+    `@orpc/zod` — `ZodToJsonSchemaConverter`
+  </Card>
+  <Card title="Valibot" icon="v" href="/openapi/schemas/valibot">
+    `@orpc/valibot` — `experimental_ValibotToJsonSchemaConverter`
+  </Card>
+  <Card title="ArkType" icon="a" href="/openapi/schemas/arktype">
+    `@orpc/arktype` — `experimental_ArkTypeToJsonSchemaConverter`
+  </Card>
+</CardGroup>
+
+## Quick example
+
+```typescript
+import { os } from '@orpc/server'
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import * as z from 'zod'
+
+const router = {
+  planet: {
+    list: os
+      .input(z.object({ limit: z.number().int().max(100).optional() }))
+      .handler(async ({ input }) => {
+        return [{ id: 1, name: 'Earth' }]
+      }),
+  },
+}
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new ZodToJsonSchemaConverter()],
+})
+
+const spec = await generator.generate(router, {
+  info: { title: 'Planet API', version: '1.0.0' },
+})
+
+console.log(JSON.stringify(spec, null, 2))
+```
+
+## Further reading
+
+<CardGroup cols={2}>
+  <Card title="Generating a Spec" href="/openapi/generating-spec">
+    Full guide to `OpenAPIGenerator` options and usage.
+  </Card>
+  <Card title="Serving a UI" href="/openapi/serving-ui">
+    Serve Scalar or Swagger UI with `OpenAPIReferencePlugin`.
+  </Card>
+  <Card title="Schema Converters" href="/openapi/schema-converters">
+    How schema conversion works and how to extend it.
+  </Card>
+  <Card title="Customization" href="/openapi/customization">
+    Per-procedure OpenAPI operation customization.
+  </Card>
+</CardGroup>

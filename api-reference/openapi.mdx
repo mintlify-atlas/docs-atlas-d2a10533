@@ -1,0 +1,284 @@
+---
+title: "@orpc/openapi"
+description: Complete API reference for the @orpc/openapi package — OpenAPI spec generation, OpenAPI-compatible HTTP handlers, and operation customization.
+---
+
+## `OpenAPIGenerator`
+
+Converts oRPC routers and contracts into OpenAPI 3.1.1 documents.
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+```
+
+### Constructor
+
+```typescript
+class OpenAPIGenerator {
+  constructor(options?: OpenAPIGeneratorOptions)
+}
+
+interface OpenAPIGeneratorOptions {
+  schemaConverters?: ConditionalSchemaConverter[]
+}
+```
+
+<ParamField body="schemaConverters" type="ConditionalSchemaConverter[]">
+  Schema converters to use for translating validation schemas to JSON Schema.
+  Supply at least one (e.g. `ZodToJsonSchemaConverter`). Multiple converters are tried in order.
+</ParamField>
+
+### `generate(router, options?)`
+
+```typescript
+generator.generate(
+  router: AnyContractRouter | AnyRouter,
+  options?: OpenAPIGeneratorGenerateOptions
+): Promise<OpenAPI.Document>
+```
+
+<ParamField body="router" type="AnyContractRouter | AnyRouter" required>
+  The oRPC router or contract to convert.
+</ParamField>
+
+<ParamField body="info" type="OpenAPI.InfoObject">
+  The info object. Defaults to `{ title: 'API Reference', version: '0.0.0' }`.
+</ParamField>
+
+<ParamField body="servers" type="OpenAPI.ServerObject[]">
+  List of server URLs.
+</ParamField>
+
+<ParamField body="filter" type="boolean | ((options: TraverseContractProcedureCallbackOptions) => boolean)">
+  Filter function or static boolean. Return `false` to exclude a procedure from the spec. Defaults to include all procedures.
+</ParamField>
+
+<ParamField body="commonSchemas" type="Record<string, { schema: AnySchema, strategy?: 'input' | 'output' } | { error: 'UndefinedError' }>">
+  Register schemas as reusable `$ref` components under `#/components/schemas`.
+</ParamField>
+
+<ParamField body="customErrorResponseBodySchema" type="JSONSchema | null | ((errors, status) => JSONSchema | null)">
+  Override the error response body shape. Return `null` to use oRPC's default.
+</ParamField>
+
+### Example
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new ZodToJsonSchemaConverter()],
+})
+
+const spec = await generator.generate(router, {
+  info: { title: 'Planet API', version: '1.0.0' },
+  servers: [{ url: 'https://api.example.com' }],
+  commonSchemas: {
+    Planet: { schema: PlanetSchema },
+  },
+  filter: ({ path }) => path[0] !== 'internal',
+})
+```
+
+---
+
+## `OpenAPIHandler`
+
+Serves your oRPC router as a standard OpenAPI-compatible HTTP API. Non-oRPC clients (curl, generated SDKs, etc.) can call it directly.
+
+```typescript
+import { OpenAPIHandler } from '@orpc/openapi/fetch'   // Fetch/Edge runtimes
+import { OpenAPIHandler } from '@orpc/openapi/node'    // Node.js
+```
+
+### Constructor
+
+```typescript
+class OpenAPIHandler<T extends Context> extends FetchHandler<T> {
+  constructor(
+    router: Router<any, T>,
+    options?: OpenAPIHandlerOptions<T>
+  )
+}
+```
+
+### `handle(request, options?)`
+
+```typescript
+handler.handle(request, {
+  prefix: '/api',
+  context: { userId: '123' },
+})
+```
+
+<ParamField body="prefix" type="string">
+  URL prefix to strip when matching routes.
+</ParamField>
+
+<ParamField body="context" type="TContext">
+  Initial context provided to all procedures.
+</ParamField>
+
+### Example (Fetch)
+
+```typescript
+import { OpenAPIHandler } from '@orpc/openapi/fetch'
+import { router } from './router'
+
+const handler = new OpenAPIHandler(router)
+
+export default {
+  async fetch(request: Request) {
+    const response = await handler.handle(request, { context: {} })
+    return response ?? new Response('Not found', { status: 404 })
+  },
+}
+```
+
+---
+
+## `OpenAPIReferencePlugin`
+
+A plugin that serves an OpenAPI spec and interactive docs UI alongside your handler.
+
+```typescript
+import { OpenAPIReferencePlugin } from '@orpc/openapi/plugins'
+```
+
+### Constructor options
+
+<ParamField body="schemaConverters" type="ConditionalSchemaConverter[]">
+  Schema converters for spec generation.
+</ParamField>
+
+<ParamField body="specGenerateOptions" type="OpenAPIGeneratorGenerateOptions | ((options) => Promisable<OpenAPIGeneratorGenerateOptions>)">
+  Options passed to `generator.generate()`.
+</ParamField>
+
+<ParamField body="specPath" type="string" default="/spec.json">
+  URL path for the OpenAPI JSON spec.
+</ParamField>
+
+<ParamField body="docsPath" type="string" default="/">
+  URL path for the interactive docs UI.
+</ParamField>
+
+<ParamField body="docsProvider" type="'scalar' | 'swagger'" default="scalar">
+  UI library to render.
+</ParamField>
+
+<ParamField body="docsTitle" type="string | ((options) => Promisable<string>)" default="API Reference">
+  Title for the docs page.
+</ParamField>
+
+```typescript
+new RPCHandler(router, {
+  plugins: [
+    new OpenAPIReferencePlugin({
+      schemaConverters: [new ZodToJsonSchemaConverter()],
+      specGenerateOptions: {
+        info: { title: 'My API', version: '1.0.0' },
+      },
+      docsPath: '/docs',
+      docsProvider: 'swagger',
+    }),
+  ],
+})
+```
+
+---
+
+## `oo.spec()`
+
+Customizes the OpenAPI operation object for a given middleware or error map entry. Applied during spec generation.
+
+```typescript
+import { oo } from '@orpc/openapi'
+
+function customOpenAPIOperation<T extends object>(
+  o: T,
+  extend: Partial<OpenAPI.OperationObject> | ((current, procedure) => OpenAPI.OperationObject)
+): T
+
+// Alias:
+oo.spec(o, extend)
+```
+
+### As a partial merge
+
+```typescript
+const authMiddleware = oo.spec(
+  os.middleware(async ({ context, next }) => next()),
+  { security: [{ bearerAuth: [] }] },
+)
+```
+
+### As a function
+
+```typescript
+const authMiddleware = oo.spec(
+  os.middleware(async ({ next }) => next()),
+  (currentOperation, procedure) => ({
+    ...currentOperation,
+    security: [{ bearerAuth: [] }],
+    'x-requires-auth': true,
+  }),
+)
+```
+
+---
+
+## `CompositeSchemaConverter`
+
+Combines multiple `ConditionalSchemaConverter` instances into one. Tries each converter in order and delegates to the first that matches.
+
+```typescript
+import { CompositeSchemaConverter } from '@orpc/openapi'
+
+class CompositeSchemaConverter implements SchemaConverter {
+  constructor(converters: readonly ConditionalSchemaConverter[])
+
+  async convert(
+    schema: AnySchema | undefined,
+    options: SchemaConvertOptions,
+  ): Promise<[required: boolean, jsonSchema: JSONSchema]>
+}
+```
+
+Used internally by `OpenAPIGenerator`. You can also use it directly:
+
+```typescript
+const composite = new CompositeSchemaConverter([
+  new ZodToJsonSchemaConverter(),
+  new experimental_ValibotToJsonSchemaConverter(),
+])
+
+const [required, jsonSchema] = await composite.convert(mySchema, { strategy: 'input' })
+```
+
+---
+
+## `SchemaConverter` interface
+
+```typescript
+interface SchemaConverter {
+  convert(
+    schema: AnySchema | undefined,
+    options: SchemaConvertOptions,
+  ): Promisable<[required: boolean, jsonSchema: JSONSchema]>
+}
+
+interface ConditionalSchemaConverter extends SchemaConverter {
+  condition(
+    schema: AnySchema | undefined,
+    options: SchemaConvertOptions,
+  ): Promisable<boolean>
+}
+
+interface SchemaConvertOptions {
+  strategy: 'input' | 'output'
+  components?: readonly SchemaConverterComponent[]
+  minStructureDepthForRef?: number
+}
+```

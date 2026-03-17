@@ -1,0 +1,144 @@
+---
+title: NestJS
+description: Integrate oRPC with NestJS using ORPCModule and the @Implement decorator.
+---
+
+`@orpc/nest` provides deep integration with [NestJS](https://nestjs.com/), letting you implement oRPC contracts inside NestJS controllers and inject NestJS providers (services, repositories, etc.) into your procedures.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/nest @nestjs/common @nestjs/core
+```
+```bash pnpm
+pnpm add @orpc/nest @nestjs/common @nestjs/core
+```
+</CodeGroup>
+
+## `ORPCModule`
+
+Register the oRPC module in your `AppModule`:
+
+```ts
+// app.module.ts
+import { Module } from '@nestjs/common'
+import { ORPCModule } from '@orpc/nest'
+import { AppController } from './app.controller'
+
+@Module({
+  imports: [
+    ORPCModule.forRoot({
+      // Optional: inject global context into all procedures
+      context: async () => ({}),
+    }),
+  ],
+  controllers: [AppController],
+})
+export class AppModule {}
+```
+
+For async configuration (e.g., using a config service):
+
+```ts
+ORPCModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: async (config: ConfigService) => ({
+    context: async () => ({ apiKey: config.get('API_KEY') }),
+  }),
+})
+```
+
+## Global context
+
+Extend the `ORPCGlobalContext` interface to add typed properties that all procedures will receive:
+
+```ts
+// orpc.d.ts
+declare module '@orpc/nest' {
+  interface ORPCGlobalContext {
+    user?: { id: string; name: string }
+  }
+}
+```
+
+## `@Implement` decorator
+
+Use the `@Implement` decorator in a NestJS controller to wire a method to a contract procedure or router:
+
+```ts
+// planet.controller.ts
+import { Controller, Inject } from '@nestjs/common'
+import { Implement } from '@orpc/nest'
+import { implement } from '@orpc/server'
+import { contract } from './contract'
+import { PlanetService } from './planet.service'
+
+const impl = implement(contract)
+
+@Controller()
+export class PlanetController {
+  constructor(private readonly planetService: PlanetService) {}
+
+  @Implement(contract.planet.list)
+  async listPlanets() {
+    return impl.planet.list.handler(async ({ input }) => {
+      return this.planetService.findAll(input)
+    })
+  }
+
+  @Implement(contract.planet.find)
+  async findPlanet() {
+    return impl.planet.find.handler(async ({ input, errors }) => {
+      const planet = await this.planetService.findOne(input.id)
+      if (!planet) throw errors.NOT_FOUND()
+      return planet
+    })
+  }
+}
+```
+
+<Note>
+  The `@Implement` decorator requires the contract procedure to have a `path` defined in its `.route()` call. Use `populateContractRouterPaths` from `@orpc/contract` to automatically fill in paths if needed.
+</Note>
+
+## Injecting NestJS providers
+
+NestJS dependency injection works normally inside oRPC controller methods. Inject any provider in the constructor and use it inside the handler:
+
+```ts
+@Controller()
+export class PlanetController {
+  constructor(
+    private readonly planetService: PlanetService,
+    private readonly authService: AuthService,
+  ) {}
+
+  @Implement(contract.planet.create)
+  async createPlanet() {
+    return impl.planet.create.handler(async ({ input, context }) => {
+      const user = await this.authService.getUser(context.user?.id)
+      return this.planetService.create(input, user)
+    })
+  }
+}
+```
+
+## Module config options
+
+<ParamField body="context" type="() => Promisable<ORPCGlobalContext>">
+  Factory function that returns the global context for every procedure call. Runs once per request.
+</ParamField>
+
+<ParamField body="plugins" type="StandardHandlerPlugin[]">
+  Plugins applied to every procedure handled through the module.
+</ParamField>
+
+<ParamField body="interceptors" type="ProcedureClientInterceptor[]">
+  Client-level interceptors applied to every procedure.
+</ParamField>
+
+<ParamField body="sendResponseInterceptors" type="Interceptor[]">
+  Interceptors that run after the procedure response is built but before it is sent.
+</ParamField>

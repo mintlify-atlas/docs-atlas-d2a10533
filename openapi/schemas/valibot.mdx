@@ -1,0 +1,104 @@
+---
+title: Valibot Schema Converter
+description: Use @orpc/valibot to convert Valibot schemas into JSON Schema for OpenAPI spec generation.
+---
+
+The `@orpc/valibot` package provides a Valibot-to-JSON Schema converter for oRPC's OpenAPI generator. It is marked as `experimental_` because the underlying `@valibot/to-json-schema` library is still evolving.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/valibot valibot @valibot/to-json-schema
+```
+
+```bash pnpm
+pnpm add @orpc/valibot valibot @valibot/to-json-schema
+```
+
+```bash yarn
+yarn add @orpc/valibot valibot @valibot/to-json-schema
+```
+</CodeGroup>
+
+## Usage
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { experimental_ValibotToJsonSchemaConverter } from '@orpc/valibot'
+import * as v from 'valibot'
+import { os } from '@orpc/server'
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new experimental_ValibotToJsonSchemaConverter()],
+})
+
+const router = {
+  planet: {
+    list: os
+      .input(
+        v.object({
+          limit: v.optional(v.pipe(v.number(), v.maxValue(100))),
+        }),
+      )
+      .output(
+        v.array(
+          v.object({
+            id: v.number(),
+            name: v.string(),
+          }),
+        ),
+      )
+      .handler(async ({ input }) => []),
+  },
+}
+
+const spec = await generator.generate(router, {
+  info: { title: 'Planet API', version: '1.0.0' },
+})
+```
+
+## Constructor options
+
+```typescript
+class experimental_ValibotToJsonSchemaConverter implements ConditionalSchemaConverter {
+  constructor(options?: experimental_ValibotToJsonSchemaConverterOptions)
+}
+
+// Options are the ConversionConfig from @valibot/to-json-schema,
+// minus 'typeMode' (which is controlled by oRPC's strategy)
+interface experimental_ValibotToJsonSchemaConverterOptions extends Omit<ConversionConfig, 'typeMode'> {
+  errorMode?: 'ignore' | 'throw' // default: 'ignore'
+}
+```
+
+<ParamField body="errorMode" type="'ignore' | 'throw'" default="ignore">
+  How to handle unsupported Valibot schemas during conversion. `'ignore'` silently skips them; `'throw'` raises an error.
+</ParamField>
+
+## How strategy maps to Valibot
+
+oRPC passes its `strategy` (`'input'` or `'output'`) to `@valibot/to-json-schema` as `typeMode`. This ensures that schemas with different input/output shapes (e.g. those using `v.transform()`) are converted correctly for each context.
+
+## Mixing Valibot with other libraries
+
+You can combine converters to support multiple schema libraries in the same project:
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import { experimental_ValibotToJsonSchemaConverter } from '@orpc/valibot'
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [
+    new ZodToJsonSchemaConverter(),
+    new experimental_ValibotToJsonSchemaConverter(),
+  ],
+})
+```
+
+Each converter's `condition` method checks the schema's `~standard.vendor` property, so Zod schemas go to `ZodToJsonSchemaConverter` and Valibot schemas go to `experimental_ValibotToJsonSchemaConverter`.
+
+<Warning>
+  The `experimental_` prefix indicates that Valibot's JSON Schema support is still evolving. The API may change in future releases of `@orpc/valibot`.
+</Warning>

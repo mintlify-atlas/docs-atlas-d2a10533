@@ -1,0 +1,89 @@
+---
+title: AWS Lambda Adapter
+description: Serve oRPC on AWS Lambda using API Gateway v2 streaming responses.
+---
+
+The AWS Lambda adapter handles requests from API Gateway HTTP API (v2) and supports streaming responses via Lambda Response Streaming.
+
+## Installation
+
+```bash
+npm install @orpc/server
+```
+
+Import from the subpath:
+
+```ts
+import { RPCHandler } from '@orpc/server/aws-lambda'
+```
+
+## Basic usage
+
+```ts
+import { RPCHandler } from '@orpc/server/aws-lambda'
+import { CORSPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [new CORSPlugin()],
+})
+
+export const lambdaHandler = awslambda.streamifyResponse(
+  async (event, responseStream, context) => {
+    const result = await handler.handle(event, responseStream, {
+      context: { lambdaContext: context },
+    })
+
+    if (!result.matched) {
+      const response = awslambda.HttpResponseStream.from(responseStream, {
+        statusCode: 404,
+      })
+      response.write('No procedure matched')
+      response.end()
+    }
+  },
+)
+```
+
+## `handle(event, responseStream, options)`
+
+| Parameter              | Type                       | Description                              |
+|------------------------|----------------------------|------------------------------------------|
+| `event`                | `APIGatewayProxyEventV2`   | The Lambda event from API Gateway v2     |
+| `responseStream`       | `ResponseStream`           | The Lambda response stream               |
+| `options.context`      | Initial context type       | Context passed to middleware             |
+| `options.prefix`       | `string` (optional)        | Strip this prefix before routing         |
+
+Returns `{ matched: true }` or `{ matched: false }`.
+
+<Note>
+  The AWS Lambda adapter requires Lambda Response Streaming, which is configured by wrapping your handler with `awslambda.streamifyResponse()`. This is needed to support SSE and large responses efficiently.
+</Note>
+
+## Passing Lambda context
+
+You can pass the Lambda `Context` object (execution role, request ID, etc.) into the oRPC context:
+
+```ts
+import type { Context as LambdaContext } from 'aws-lambda'
+
+const base = os.$context<{ lambdaContext: LambdaContext }>()
+
+export const lambdaHandler = awslambda.streamifyResponse(
+  async (event, responseStream, lambdaContext) => {
+    await handler.handle(event, responseStream, {
+      context: { lambdaContext },
+    })
+  },
+)
+```
+
+## Options
+
+<ParamField body="plugins" type="StandardHandlerPlugin[]">
+  Plugins to apply to the handler.
+</ParamField>
+
+<ParamField body="strictGetMethodPluginEnabled" type="boolean" default="true">
+  Restricts non-mutation procedures to GET requests.
+</ParamField>

@@ -1,0 +1,432 @@
+---
+title: "@orpc/server"
+description: Complete API reference for the @orpc/server package — building procedures, routers, middleware, and server handlers.
+---
+
+## `os` — the global builder
+
+`os` is the root `Builder` instance. All procedure and router definitions start here.
+
+```typescript
+import { os } from '@orpc/server'
+```
+
+### Builder methods
+
+#### `.$context<TContext>()`
+
+Sets the expected initial context type for all procedures. Call this first when you want type-safe context.
+
+```typescript
+const authed = os.$context<{ userId: string }>()
+
+const getProfile = authed
+  .handler(async ({ context }) => {
+    return { id: context.userId }
+  })
+```
+
+#### `.$config(config)`
+
+Overrides builder-level configuration.
+
+```typescript
+os.$config({
+  initialInputValidationIndex: 0,
+  initialOutputValidationIndex: 0,
+  dedupeLeadingMiddlewares: true,
+})
+```
+
+#### `.$meta<TMeta>(initialMeta)`
+
+Sets the initial metadata type for procedures.
+
+#### `.$route(initialRoute)`
+
+Sets the initial route definition (useful as a router-level default).
+
+#### `.$input<TSchema>(initialSchema)`
+
+Sets the initial input schema. Procedures inherit this schema.
+
+#### `.use(middleware)`
+
+Adds middleware to the pipeline. Middleware runs for every procedure defined after this call.
+
+```typescript
+const auth = os.use(async ({ context, next }) => {
+  const user = await authenticate(context.headers)
+  return next({ context: { user } })
+})
+```
+
+#### `.errors(errorMap)`
+
+Registers type-safe errors. Error constructors are available in procedure handlers via `errors.*`.
+
+```typescript
+const withErrors = os.errors({
+  NOT_FOUND: { status: 404, message: 'Not found' },
+  UNAUTHORIZED: { status: 401 },
+})
+```
+
+#### `.meta(meta)`
+
+Sets or merges metadata onto subsequent procedures.
+
+#### `.route(route)`
+
+Sets or merges route options (method, path, tags, etc.) onto subsequent procedures.
+
+```typescript
+os.route({ method: 'GET', path: '/planets', tags: ['planets'] })
+```
+
+#### `.input(schema)`
+
+Defines the input validation schema for a procedure.
+
+```typescript
+import * as z from 'zod'
+
+const proc = os.input(z.object({ name: z.string() }))
+```
+
+#### `.output(schema)`
+
+Defines the output validation schema for a procedure.
+
+#### `.handler(fn)`
+
+Defines the procedure handler. Returns a `DecoratedProcedure`.
+
+```typescript
+const listPlanets = os
+  .input(z.object({ limit: z.number().optional() }))
+  .handler(async ({ input, context, errors }) => {
+    return [{ id: 1, name: 'Earth' }]
+  })
+```
+
+#### `.prefix(path)`
+
+Prefixes all procedures in a router with the given path. Only affects procedures with explicit `.route({ path: ... })`.
+
+```typescript
+const apiRouter = os.prefix('/api').router({ ... })
+```
+
+#### `.tag(...tags)`
+
+Adds OpenAPI tags to all procedures in the subsequent router.
+
+#### `.router(router)`
+
+Applies all accumulated options (middleware, errors, prefix, tags) to a router.
+
+```typescript
+export const router = os
+  .use(authMiddleware)
+  .errors({ UNAUTHORIZED: {} })
+  .router({
+    planet: { list: listPlanets, create: createPlanet },
+  })
+```
+
+#### `.lazy(loader)`
+
+Creates a lazy-loaded router. The loader is called only when the route is first matched.
+
+```typescript
+export const router = os.lazy(() => import('./planet-router'))
+```
+
+#### `.middleware(fn)`
+
+Creates a `DecoratedMiddleware` (useful for reuse and composition).
+
+```typescript
+const logMiddleware = os.middleware(async ({ next, path }) => {
+  console.log('Calling', path)
+  return next()
+})
+```
+
+---
+
+## `ORPCError`
+
+Thrown inside procedure handlers or middleware to signal known errors.
+
+```typescript
+import { ORPCError } from '@orpc/server'
+
+throw new ORPCError('NOT_FOUND', {
+  message: 'Planet not found',
+  data: { id: 42 },
+})
+
+// Or use a shorthand from the errors constructor map:
+throw errors.NOT_FOUND({ message: 'Custom message' })
+```
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `string` | The error code (e.g. `'NOT_FOUND'`) |
+| `status` | `number` | HTTP status code |
+| `message` | `string` | Human-readable message |
+| `data` | `TData` | Optional typed payload |
+| `defined` | `boolean` | `true` if registered in an error map |
+| `cause` | `unknown` | Original cause (from `ErrorOptions`) |
+
+### Common error codes
+
+`BAD_REQUEST` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404), `CONFLICT` (409), `UNPROCESSABLE_CONTENT` (422), `INTERNAL_SERVER_ERROR` (500)
+
+---
+
+## Types
+
+### `RouterClient<TRouter, TClientContext>`
+
+Infers a fully type-safe callable client type from a router. Nested procedures become nested async functions.
+
+```typescript
+import type { RouterClient } from '@orpc/server'
+
+const client: RouterClient<typeof router> = createRouterClient(router, {
+  context: { headers: req.headers },
+})
+
+const planets = await client.planet.list({ limit: 10 })
+```
+
+### `InferRouterInputs<TRouter>`
+
+Infers the input types of all procedures in a router.
+
+```typescript
+import type { InferRouterInputs } from '@orpc/server'
+
+type Inputs = InferRouterInputs<typeof router>
+// => { planet: { list: { limit?: number }, create: { name: string } } }
+```
+
+### `InferRouterOutputs<TRouter>`
+
+Infers the output types of all procedures in a router.
+
+---
+
+## `createRouterClient()`
+
+Creates a server-side client for calling procedures directly (without HTTP).
+
+```typescript
+import { createRouterClient } from '@orpc/server'
+
+const client = createRouterClient(router, {
+  context: { userId: '123' },
+})
+
+const result = await client.planet.list({ limit: 5 })
+```
+
+---
+
+## `lazy()`
+
+Wraps a dynamic import in a lazy router for improved cold start times.
+
+```typescript
+import { lazy } from '@orpc/server'
+
+export const router = {
+  planet: lazy(() => import('./planet-router')),
+}
+```
+
+---
+
+## `EventPublisher`
+
+Publishes events to multiple async iterator subscribers. Used for SSE/streaming.
+
+```typescript
+import { EventPublisher } from '@orpc/server'
+
+const publisher = new EventPublisher<{ type: string; data: unknown }>()
+
+// Subscribe
+const sub = publisher.subscribe()
+
+// Publish events
+publisher.publish({ type: 'update', data: { id: 1 } })
+
+// Complete
+publisher.complete()
+```
+
+---
+
+## `eventIterator()`
+
+Used in output schemas to declare that a procedure returns an event iterator (async iterable).
+
+```typescript
+import { eventIterator } from '@orpc/server'
+import * as z from 'zod'
+
+const stream = os
+  .output(eventIterator(z.object({ type: z.string() })))
+  .handler(async function* ({ input }) {
+    yield { type: 'start' }
+    yield { type: 'done' }
+  })
+```
+
+---
+
+## `isDefinedError()` and `safe()`
+
+```typescript
+import { isDefinedError, safe } from '@orpc/server'
+
+// Check if an error is a known (registered) ORPCError
+if (isDefinedError(error)) {
+  console.log(error.code, error.data)
+}
+
+// Wrap a procedure call to get [error, data] tuple instead of throwing
+const [err, result] = await safe(client.planet.find({ id: 1 }))
+```
+
+---
+
+## Lifecycle hooks
+
+Hooks for observing procedure execution:
+
+```typescript
+import { onStart, onSuccess, onError, onFinish } from '@orpc/server'
+
+const telemetryMiddleware = os.middleware(
+  onFinish((result, { path }) => {
+    console.log('Finished', path, result.success)
+  }),
+)
+```
+
+| Hook | Called when |
+|---|---|
+| `onStart(fn)` | Before the handler runs |
+| `onSuccess(fn)` | Handler completes successfully |
+| `onError(fn)` | Handler throws an error |
+| `onFinish(fn)` | Always, after success or error |
+
+---
+
+## `RPCHandler` adapters
+
+Handlers for different runtimes. All support `plugins`.
+
+<Tabs>
+  <Tab title="Fetch">
+    ```typescript
+    import { RPCHandler } from '@orpc/server/fetch'
+
+    const handler = new RPCHandler(router, { plugins: [] })
+
+    export default {
+      fetch(request: Request) {
+        return handler.handle(request, { context: {} })
+      },
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ```typescript
+    import { RPCHandler } from '@orpc/server/node'
+
+    const handler = new RPCHandler(router)
+
+    createServer(async (req, res) => {
+      const result = await handler.handle(req, res, {
+        context: { headers: req.headers },
+      })
+      if (!result.matched) res.end('Not found')
+    }).listen(3000)
+    ```
+  </Tab>
+  <Tab title="AWS Lambda">
+    ```typescript
+    import { RPCHandler } from '@orpc/server/aws-lambda'
+
+    const handler = new RPCHandler(router)
+
+    export const main = async (event: APIGatewayProxyEventV2) => {
+      const result = await handler.handle(event, { context: {} })
+      return result.response ?? { statusCode: 404 }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Plugins
+
+### `CORSPlugin`
+
+```typescript
+import { CORSPlugin } from '@orpc/server/plugins'
+
+new RPCHandler(router, {
+  plugins: [
+    new CORSPlugin({
+      origin: ['https://app.example.com'],
+      allowHeaders: ['Authorization', 'Content-Type'],
+    }),
+  ],
+})
+```
+
+### `BatchHandlerPlugin`
+
+Enables batching multiple procedure calls into a single HTTP request.
+
+```typescript
+import { BatchHandlerPlugin } from '@orpc/server/plugins'
+
+new RPCHandler(router, {
+  plugins: [new BatchHandlerPlugin()],
+})
+```
+
+### `SimpleCsrfProtectionHandlerPlugin`
+
+Validates a custom header to prevent CSRF attacks.
+
+```typescript
+import { SimpleCsrfProtectionHandlerPlugin } from '@orpc/server/plugins'
+
+new RPCHandler(router, {
+  plugins: [new SimpleCsrfProtectionHandlerPlugin()],
+})
+```
+
+### `ResponseHeadersPlugin`
+
+Allows procedures to set response headers via context.
+
+```typescript
+import { ResponseHeadersPlugin } from '@orpc/server/plugins'
+
+new RPCHandler(router, {
+  plugins: [new ResponseHeadersPlugin()],
+})
+```

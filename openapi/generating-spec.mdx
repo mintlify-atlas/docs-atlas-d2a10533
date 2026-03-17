@@ -1,0 +1,229 @@
+---
+title: Generating an OpenAPI Spec
+description: Use OpenAPIGenerator to produce a fully valid OpenAPI 3.1.1 document from any oRPC router or contract.
+---
+
+`OpenAPIGenerator` converts an oRPC router or contract into an [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1) document. It requires at least one [schema converter](/openapi/schema-converters) to translate your validation schemas into JSON Schema.
+
+## Basic usage
+
+```typescript
+import { os } from '@orpc/server'
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import * as z from 'zod'
+
+const router = {
+  planet: {
+    list: os
+      .input(
+        z.object({
+          limit: z.number().int().min(1).max(100).optional(),
+          cursor: z.number().int().min(0).default(0),
+        }),
+      )
+      .handler(async ({ input }) => [
+        { id: 1, name: 'Earth' },
+      ]),
+
+    create: os
+      .input(z.object({ name: z.string(), description: z.string().optional() }))
+      .handler(async ({ input }) => ({ id: 2, ...input })),
+  },
+}
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new ZodToJsonSchemaConverter()],
+})
+
+const spec = await generator.generate(router, {
+  info: {
+    title: 'Planet API',
+    version: '1.0.0',
+  },
+})
+```
+
+## Constructor options
+
+```typescript
+class OpenAPIGenerator {
+  constructor(options?: OpenAPIGeneratorOptions)
+}
+
+interface OpenAPIGeneratorOptions {
+  schemaConverters?: ConditionalSchemaConverter[]
+}
+```
+
+<ParamField body="schemaConverters" type="ConditionalSchemaConverter[]">
+  An array of schema converters. Each converter is tried in order until one accepts the schema.
+  For most projects, a single converter suffices (e.g. `ZodToJsonSchemaConverter`).
+  Use `CompositeSchemaConverter` if you need to combine several.
+</ParamField>
+
+## `generate()` method
+
+```typescript
+generator.generate(
+  router: AnyContractRouter | AnyRouter,
+  options?: OpenAPIGeneratorGenerateOptions
+): Promise<OpenAPI.Document>
+```
+
+The `generate` method accepts any oRPC router or contract and returns a fully-formed OpenAPI document.
+
+### Generate options
+
+<ParamField body="info" type="OpenAPI.InfoObject">
+  The `info` object for the spec. Defaults to `{ title: 'API Reference', version: '0.0.0' }`.
+
+  ```typescript
+  info: { title: 'My API', version: '2.0.0' }
+  ```
+</ParamField>
+
+<ParamField body="filter" type="Value<boolean, [TraverseContractProcedureCallbackOptions]>">
+  Controls which procedures are included in the spec. Return `false` to exclude a procedure.
+
+  ```typescript
+  filter: ({ path }) => !path.includes('internal'),
+  ```
+</ParamField>
+
+<ParamField body="commonSchemas" type="Record<string, { schema: AnySchema, strategy?: 'input' | 'output' } | { error: 'UndefinedError' }>">
+  Schemas to register as reusable `$ref` entries under `components/schemas`. This reduces repetition in the generated spec when the same schema appears in multiple places.
+
+  The special `{ error: 'UndefinedError' }` entry registers the shape of undefined (non-type-safe) oRPC errors.
+
+  <Expandable title="strategy option">
+    Some schemas transform data differently on input vs output (e.g. a `z.string().transform(Number).pipe(z.number())`).
+    The `strategy` controls which version is stored in components:
+
+    - `'input'` (default) — use the input shape
+    - `'output'` — use the output shape
+
+    If input and output shapes are identical, both strategies will match the `$ref`.
+  </Expandable>
+</ParamField>
+
+<ParamField body="customErrorResponseBodySchema" type="Value<JSONSchema | null, [errors, status]>">
+  Override the shape of error response bodies. Useful for aligning oRPC's error format with existing API conventions.
+
+  Return `null` or `undefined` to use oRPC's default error body shape.
+</ParamField>
+
+<ParamField body="servers" type="OpenAPI.ServerObject[]">
+  List of servers for the spec. Any other top-level OpenAPI fields (e.g. `tags`, `externalDocs`) are also supported.
+</ParamField>
+
+## Filtering procedures
+
+Use the `filter` option to exclude specific procedures:
+
+```typescript
+const spec = await generator.generate(router, {
+  info: { title: 'Public API', version: '1.0.0' },
+  // Exclude anything under the 'admin' path
+  filter: ({ path }) => path[0] !== 'admin',
+})
+```
+
+## Common schemas (`$ref` reuse)
+
+The `commonSchemas` option registers schemas as reusable `$ref` entries under `#/components/schemas`, reducing duplication:
+
+```typescript
+import * as z from 'zod'
+
+const PlanetSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+})
+
+const spec = await generator.generate(router, {
+  info: { title: 'Planet API', version: '1.0.0' },
+  commonSchemas: {
+    Planet: { schema: PlanetSchema },
+    UndefinedError: { error: 'UndefinedError' },
+  },
+})
+// The generated spec will use $ref: '#/components/schemas/Planet'
+// wherever PlanetSchema appears
+```
+
+## Working with contracts
+
+`OpenAPIGenerator` works equally well with oRPC contracts:
+
+```typescript
+import { oc } from '@orpc/contract'
+import * as z from 'zod'
+
+const contract = oc.router({
+  planet: {
+    list: oc.input(z.object({ limit: z.number().optional() })).output(z.array(PlanetSchema)),
+    create: oc.input(z.object({ name: z.string() })).output(PlanetSchema),
+  },
+})
+
+const spec = await generator.generate(contract, {
+  info: { title: 'Planet API', version: '1.0.0' },
+})
+```
+
+<Note>
+  When generating from a contract, the spec reflects the contract's defined input/output schemas exactly — no runtime handler logic is involved.
+</Note>
+
+## Full working example
+
+```typescript
+import { ORPCError, os } from '@orpc/server'
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import * as z from 'zod'
+
+const PlanetSchema = z.object({
+  id: z.number().int().min(1),
+  name: z.string(),
+  description: z.string().optional(),
+})
+
+const router = {
+  planet: {
+    list: os
+      .input(z.object({ limit: z.number().int().max(100).optional() }))
+      .output(z.array(PlanetSchema))
+      .handler(async ({ input }) => []),
+
+    find: os
+      .input(PlanetSchema.pick({ id: true }))
+      .output(PlanetSchema)
+      .errors({ NOT_FOUND: { message: 'Planet not found' } })
+      .handler(async ({ input, errors }) => {
+        throw errors.NOT_FOUND()
+      }),
+
+    create: os
+      .input(PlanetSchema.omit({ id: true }))
+      .output(PlanetSchema)
+      .handler(async ({ input }) => ({ id: 1, ...input })),
+  },
+}
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new ZodToJsonSchemaConverter()],
+})
+
+const spec = await generator.generate(router, {
+  info: { title: 'Planet API', version: '1.0.0' },
+  servers: [{ url: 'https://api.example.com' }],
+  commonSchemas: {
+    Planet: { schema: PlanetSchema },
+  },
+  filter: ({ path }) => path[0] !== 'internal',
+})
+
+console.log(JSON.stringify(spec, null, 2))
+```

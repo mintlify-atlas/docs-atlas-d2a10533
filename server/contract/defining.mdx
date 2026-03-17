@@ -1,0 +1,153 @@
+---
+title: Defining a Contract
+description: Use the oc builder from @orpc/contract to declare your API shape without any implementation.
+---
+
+Install `@orpc/contract`:
+
+<CodeGroup>
+```bash npm
+npm install @orpc/contract
+```
+```bash pnpm
+pnpm add @orpc/contract
+```
+```bash yarn
+yarn add @orpc/contract
+```
+</CodeGroup>
+
+## The `oc` builder
+
+`@orpc/contract` exports a pre-configured `oc` builder (`ContractBuilder`) that mirrors the `os` builder API but only defines the contract shape — no handlers, no middleware.
+
+```ts
+import { oc } from '@orpc/contract'
+```
+
+## Procedure contracts
+
+### `.input(schema)`
+
+Defines the input schema:
+
+```ts
+import { oc } from '@orpc/contract'
+import * as z from 'zod'
+
+const listPlanets = oc
+  .input(
+    z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      cursor: z.number().int().min(0).default(0),
+    }),
+  )
+```
+
+### `.output(schema)`
+
+Defines the output schema:
+
+```ts
+const listPlanets = oc
+  .input(z.object({ limit: z.number().optional() }))
+  .output(z.array(z.object({ id: z.number(), name: z.string() })))
+```
+
+### `.errors(map)`
+
+Declares typed errors the procedure can return:
+
+```ts
+const findPlanet = oc
+  .input(z.object({ id: z.number() }))
+  .output(z.object({ id: z.number(), name: z.string() }))
+  .errors({
+    NOT_FOUND: {
+      status: 404,
+      message: 'Planet not found',
+    },
+  })
+```
+
+### `.route(options)`
+
+Attaches HTTP route information for OpenAPI generation:
+
+```ts
+const findPlanet = oc
+  .route({
+    method: 'GET',
+    path: '/planets/{id}',
+    summary: 'Find a planet by ID',
+    tags: ['planets'],
+  })
+  .input(z.object({ id: z.number() }))
+  .output(z.object({ id: z.number(), name: z.string() }))
+```
+
+### `.meta(object)`
+
+Attaches arbitrary metadata (useful for authorization annotations, etc.):
+
+```ts
+const createPlanet = oc
+  .$meta<{ authRequired: boolean }>({})
+  .meta({ authRequired: true })
+  .input(z.object({ name: z.string() }))
+  .output(z.object({ id: z.number(), name: z.string() }))
+```
+
+## Contract routers
+
+Group procedure contracts into a nested object using `oc.router()`:
+
+```ts
+import { oc } from '@orpc/contract'
+import * as z from 'zod'
+
+export const contract = oc.router({
+  planet: {
+    list: oc
+      .input(z.object({ limit: z.number().optional() }))
+      .output(z.array(z.object({ id: z.number(), name: z.string() }))),
+
+    find: oc
+      .route({ method: 'GET', path: '/planets/{id}' })
+      .input(z.object({ id: z.number() }))
+      .output(z.object({ id: z.number(), name: z.string() }))
+      .errors({ NOT_FOUND: { status: 404 } }),
+
+    create: oc
+      .route({ method: 'POST', path: '/planets' })
+      .input(z.object({ name: z.string() }))
+      .output(z.object({ id: z.number(), name: z.string() })),
+  },
+})
+
+export type AppContract = typeof contract
+```
+
+## Router-level prefix and tags
+
+```ts
+const planetContract = oc
+  .prefix('/planets')
+  .tag('planets')
+  .router({
+    list: oc.input(z.object({ limit: z.number().optional() })),
+    find: oc.input(z.object({ id: z.number() })),
+  })
+```
+
+## Type utilities
+
+```ts
+import type {
+  InferContractRouterInputs,
+  InferContractRouterOutputs,
+} from '@orpc/contract'
+
+type Inputs = InferContractRouterInputs<typeof contract>
+type Outputs = InferContractRouterOutputs<typeof contract>
+```

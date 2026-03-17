@@ -1,0 +1,212 @@
+---
+title: 'React Query'
+description: 'Integrate oRPC with TanStack Query in React using @orpc/react-query.'
+---
+
+`@orpc/react-query` is a thin wrapper around `@orpc/tanstack-query` that re-exports everything with React-specific types from `@tanstack/react-query`.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @orpc/react-query @tanstack/react-query
+```
+
+```bash yarn
+yarn add @orpc/react-query @tanstack/react-query
+```
+
+```bash pnpm
+pnpm add @orpc/react-query @tanstack/react-query
+```
+
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Create your oRPC client">
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+const link = new RPCLink({ url: '/rpc' })
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+  </Step>
+  <Step title="Create React Query utils">
+
+```typescript
+import { createORPCReactQueryUtils } from '@orpc/react-query'
+import { orpc } from './client'
+
+export const orpcUtils = createORPCReactQueryUtils(orpc)
+```
+
+  </Step>
+  <Step title="Add the QueryClientProvider">
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
+
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+```
+
+  </Step>
+</Steps>
+
+## useQuery
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import { orpcUtils } from './orpc'
+
+export function PlanetList() {
+  const { data, isLoading, error } = useQuery(
+    orpcUtils.planet.list.queryOptions({ input: { limit: 10 } }),
+  )
+
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {data?.map(planet => (
+        <li key={planet.id}>{planet.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## useSuspenseQuery
+
+```tsx
+import { useSuspenseQuery } from '@tanstack/react-query'
+
+export function PlanetDetail({ id }: { id: number }) {
+  const { data } = useSuspenseQuery(
+    orpcUtils.planet.find.queryOptions({ input: { id } }),
+  )
+
+  return <div>{data.name}</div>
+}
+```
+
+## useInfiniteQuery
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+export function InfinitePlanetList() {
+  const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
+    orpcUtils.planet.list.infiniteOptions({
+      input: pageParam => ({ cursor: pageParam, limit: 10 }),
+      initialPageParam: 0,
+      getNextPageParam: lastPage => lastPage.nextCursor,
+    }),
+  )
+
+  return (
+    <div>
+      {data?.pages.flatMap(page => page).map(planet => (
+        <div key={planet.id}>{planet.name}</div>
+      ))}
+      <button onClick={() => fetchNextPage()} disabled={!hasNextPage}>
+        Load more
+      </button>
+    </div>
+  )
+}
+```
+
+## useMutation
+
+```tsx
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+export function CreatePlanetForm() {
+  const queryClient = useQueryClient()
+
+  const { mutate, isPending } = useMutation(
+    orpcUtils.planet.create.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: orpcUtils.planet.list.queryKey(),
+        })
+      },
+    }),
+  )
+
+  return (
+    <button
+      disabled={isPending}
+      onClick={() => mutate({ name: 'Mars', description: 'The red planet' })}
+    >
+      Create planet
+    </button>
+  )
+}
+```
+
+## Prefetching on the server
+
+oRPC clients work on both client and server, so you can prefetch queries in server components or loaders:
+
+```typescript
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
+import { orpc } from './server-client' // direct server-side client
+import { orpcUtils } from './orpc'
+
+export async function PlanetsPage() {
+  const queryClient = new QueryClient()
+
+  await queryClient.prefetchQuery(
+    orpcUtils.planet.list.queryOptions({ input: { limit: 10 } }),
+  )
+
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <PlanetList />
+    </HydrationBoundary>
+  )
+}
+```
+
+<Note>
+For server-side usage, create a separate oRPC client that calls your handlers directly rather than going through HTTP. Use `createRouterClient(router)` from `@orpc/server` to build a direct server-side client.
+</Note>
+
+## Cache invalidation
+
+```typescript
+const queryClient = useQueryClient()
+
+// Specific query
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.list.queryKey({ input: { limit: 10 } }),
+})
+
+// All queries for a procedure
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.list.queryKey(),
+})
+
+// All planet queries
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.key(),
+})
+```

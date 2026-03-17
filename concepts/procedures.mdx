@@ -1,0 +1,139 @@
+---
+title: "Procedures"
+description: "A procedure is a single API operation — an async function with a typed input, typed output, and typed errors."
+---
+
+A **procedure** is the fundamental building block in oRPC. It represents one callable API operation: a function that accepts validated input and returns validated output.
+
+You build procedures using the `os` builder from `@orpc/server`.
+
+## Basic procedure
+
+The simplest procedure has no input schema — it just defines a handler:
+
+```typescript
+import { os } from '@orpc/server'
+
+const hello = os.handler(async () => {
+  return 'Hello, world!'
+})
+```
+
+## Defining input and output
+
+Chain `.input()` and `.output()` to add Zod (or any Standard Schema-compatible) validators:
+
+```typescript
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+const PlanetSchema = z.object({
+  id: z.number().int().min(1),
+  name: z.string(),
+  description: z.string().optional(),
+})
+
+export const findPlanet = os
+  .input(PlanetSchema.pick({ id: true }))
+  .output(PlanetSchema)
+  .handler(async ({ input }) => {
+    // input is typed as { id: number }
+    return { id: input.id, name: 'Earth' }
+    // return type is validated against PlanetSchema
+  })
+```
+
+The handler receives an `options` object with the following properties:
+
+| Property | Description |
+|---|---|
+| `input` | Validated and parsed input, typed from your input schema |
+| `context` | Request-scoped data passed from middleware and the server handler |
+| `errors` | Type-safe error constructors defined with `.errors()` |
+| `path` | The procedure's path in the router hierarchy |
+| `procedure` | Reference to the current procedure |
+| `signal` | `AbortSignal` from the request |
+| `lastEventId` | Last event ID for SSE reconnections |
+
+## Input-only procedure
+
+You can omit `.output()` — oRPC will infer the return type from the handler:
+
+```typescript
+export const listPlanet = os
+  .input(
+    z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      cursor: z.number().int().min(0).default(0),
+    }),
+  )
+  .handler(async ({ input }) => {
+    // your list code here
+    return [{ id: 1, name: 'name' }]
+  })
+```
+
+## The builder chain
+
+The `os` builder supports a fluent chain. You can call the steps in this order:
+
+```typescript
+os
+  .$context<TContext>()   // set the initial context type
+  .errors({ ... })        // declare typed errors
+  .use(middleware)        // attach middleware
+  .input(schema)          // define input validation
+  .output(schema)         // define output validation
+  .handler(fn)            // implement the procedure
+```
+
+<Note>
+  `.input()` and `.output()` are optional. If you omit them, the procedure accepts any input and returns the inferred handler output type.
+</Note>
+
+## Adding middleware to a procedure
+
+You can attach middleware directly to a procedure with `.use()`. Middleware runs before the handler and can modify context or short-circuit the call:
+
+```typescript
+import { ORPCError, os } from '@orpc/server'
+import type { IncomingHttpHeaders } from 'node:http'
+
+export const createPlanet = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .use(({ context, next }) => {
+    const user = parseJWT(context.headers.authorization?.split(' ')[1])
+
+    if (user) {
+      return next({ context: { user } })
+    }
+
+    throw new ORPCError('UNAUTHORIZED')
+  })
+  .input(PlanetSchema.omit({ id: true }))
+  .handler(async ({ input, context }) => {
+    // context.user is available and typed here
+    return { id: 1, name: input.name }
+  })
+```
+
+## Reusing procedures
+
+Because procedures are plain objects, you can store them in variables, import them across files, and compose them into routers freely. See [Routers](/concepts/routers) for how to group procedures together.
+
+## Server actions
+
+A `DecoratedProcedure` can be made callable as a React Server Action with `.actionable()`:
+
+```typescript
+export const createPlanet = os
+  .input(PlanetSchema.omit({ id: true }))
+  .handler(async ({ input }) => {
+    return { id: 1, name: input.name }
+  })
+  .actionable()
+```
+
+<Tip>
+  Learn more about server action support in the [Server Actions](/server/server-actions) guide.
+</Tip>

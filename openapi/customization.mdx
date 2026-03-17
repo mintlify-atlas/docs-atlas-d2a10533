@@ -1,0 +1,196 @@
+---
+title: Customization
+description: Customize OpenAPI operation objects per-procedure using oo.spec(), route metadata, and error map overrides.
+---
+
+oRPC provides several mechanisms to customize how procedures appear in the generated OpenAPI spec.
+
+## Per-procedure route metadata
+
+The `.route()` method on a procedure lets you set OpenAPI-relevant metadata:
+
+```typescript
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+const createPlanet = os
+  .route({
+    method: 'POST',
+    path: '/planets',
+    summary: 'Create a planet',
+    description: 'Adds a new planet to the database.',
+    tags: ['planets'],
+    deprecated: false,
+    successStatus: 201,
+    successDescription: 'Planet created successfully',
+    operationId: 'createPlanet',
+  })
+  .input(z.object({ name: z.string() }))
+  .output(z.object({ id: z.number(), name: z.string() }))
+  .handler(async ({ input }) => ({ id: 1, ...input }))
+```
+
+### Available route fields
+
+| Field | Type | Description |
+|---|---|---|
+| `method` | `'GET' \| 'POST' \| 'PUT' \| 'PATCH' \| 'DELETE'` | HTTP method. Defaults to `POST`. |
+| `path` | `string` | URL path. Supports `{param}` syntax for dynamic segments. |
+| `summary` | `string` | Short operation summary. |
+| `description` | `string` | Longer operation description. |
+| `tags` | `string[]` | Tags for grouping in the UI. |
+| `deprecated` | `boolean` | Marks the operation as deprecated. |
+| `successStatus` | `number` | Success HTTP status code. Defaults to `200`. |
+| `successDescription` | `string` | Description for the success response. |
+| `operationId` | `string` | Unique operation ID. Defaults to the procedure path (e.g. `planet.create`). |
+
+## `oo.spec()` — full operation override
+
+For complete control over the OpenAPI operation object, use `oo.spec()`. This lets you annotate middleware or error map entries with operation-level overrides that are applied during spec generation.
+
+```typescript
+import { os } from '@orpc/server'
+import { oo } from '@orpc/openapi'
+import * as z from 'zod'
+
+const requiresAuth = oo.spec(
+  os.middleware(async ({ context, next }) => {
+    // authentication logic
+    return next()
+  }),
+  {
+    // Extend all operations that use this middleware
+    security: [{ bearerAuth: [] }],
+  },
+)
+
+const createPlanet = os
+  .use(requiresAuth)
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input }) => ({ id: 1, ...input }))
+```
+
+`oo.spec()` can accept either a partial `OperationObject` or a function that receives and returns the current operation:
+
+```typescript
+import { oo } from '@orpc/openapi'
+
+const myMiddleware = oo.spec(
+  os.middleware(async ({ next }) => next()),
+  (currentOperation, procedure) => ({
+    ...currentOperation,
+    // Add a custom extension
+    'x-internal': false,
+    security: [{ apiKey: [] }],
+  }),
+)
+```
+
+<Tip>
+  `oo.spec()` works on middleware and error map items. When a procedure uses multiple annotated middleware, the overrides are applied in order from first to last.
+</Tip>
+
+## Setting the full operation spec directly
+
+For complete bypass of oRPC's spec generation logic for a given procedure, set `spec` directly in `.route()`:
+
+```typescript
+const myProcedure = os
+  .route({
+    method: 'GET',
+    path: '/status',
+    spec: {
+      operationId: 'getStatus',
+      summary: 'Health check',
+      responses: {
+        200: { description: 'OK' },
+      },
+    },
+  })
+  .handler(async () => ({ status: 'ok' }))
+```
+
+You can also provide `spec` as a function that receives the auto-generated operation and returns a modified one:
+
+```typescript
+.route({
+  spec: (generated) => ({
+    ...generated,
+    'x-custom-field': true,
+  }),
+})
+```
+
+## Tagging all procedures in a sub-router
+
+Use `.tag()` on a builder to apply tags to an entire group of procedures:
+
+```typescript
+import { os } from '@orpc/server'
+
+const planetRouter = os.tag('planets').router({
+  list: os.handler(async () => []),
+  create: os.handler(async () => ({ id: 1 })),
+})
+// Both 'list' and 'create' will have the 'planets' tag in the spec
+```
+
+## Common schemas (`$ref` sharing)
+
+The `commonSchemas` option in `generator.generate()` registers frequently-used schemas under `#/components/schemas`, replacing inline duplicates with `$ref`:
+
+```typescript
+import * as z from 'zod'
+
+const PlanetSchema = z.object({ id: z.number(), name: z.string() })
+
+const spec = await generator.generate(router, {
+  info: { title: 'API', version: '1.0.0' },
+  commonSchemas: {
+    Planet: { schema: PlanetSchema },
+    // Register the undefined-error shape as a named component
+    UndefinedError: { error: 'UndefinedError' },
+  },
+})
+```
+
+## Custom error response body schema
+
+By default, oRPC generates error response bodies using its standard shape. Override this globally with `customErrorResponseBodySchema`:
+
+```typescript
+const spec = await generator.generate(router, {
+  info: { title: 'API', version: '1.0.0' },
+  customErrorResponseBodySchema: (definedErrors, status) => ({
+    type: 'object',
+    properties: {
+      success: { const: false },
+      error: {
+        type: 'object',
+        properties: {
+          code: { type: 'string' },
+          message: { type: 'string' },
+        },
+        required: ['code', 'message'],
+      },
+    },
+    required: ['success', 'error'],
+  }),
+})
+```
+
+Return `null` or `undefined` to use oRPC's default error body for a given status.
+
+## Filtering procedures from the spec
+
+Use the `filter` option to exclude procedures from the spec entirely:
+
+```typescript
+const spec = await generator.generate(router, {
+  info: { title: 'Public API', version: '1.0.0' },
+  filter: ({ path, contract }) => {
+    // Exclude internal/admin procedures
+    return path[0] !== 'admin' && path[0] !== 'internal'
+  },
+})
+```

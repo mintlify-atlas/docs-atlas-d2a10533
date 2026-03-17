@@ -1,0 +1,99 @@
+---
+title: 'Client overview'
+description: 'Consume your oRPC API from any client with full end-to-end type safety.'
+---
+
+The `@orpc/client` package lets you call your oRPC procedures from the browser, Node.js, or any JavaScript runtime. It connects to your server through a **link**, gives you a fully typed proxy client, and integrates with popular data-fetching libraries.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @orpc/client
+```
+
+```bash yarn
+yarn add @orpc/client
+```
+
+```bash pnpm
+pnpm add @orpc/client
+```
+
+```bash bun
+bun add @orpc/client
+```
+
+</CodeGroup>
+
+## How it works
+
+Every client call flows through a **link**. A link is responsible for serialising the request, sending it over the wire, and deserialising the response. The built-in `RPCLink` communicates with an oRPC server over HTTP.
+
+```typescript
+import type { RouterClient } from '@orpc/server'
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { router } from './server'
+
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+})
+
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+The `RouterClient<typeof router>` type parameter wires up the exact input, output, and error types for every procedure in your router — so TypeScript catches mistakes before they reach the network.
+
+## Calling procedures
+
+The client is a deeply nested proxy that mirrors your router shape:
+
+```typescript
+// Calls planet.list with { limit: 10 }
+const planets = await orpc.planet.list({ limit: 10 })
+
+// Calls planet.find with { id: 1 }
+const planet = await orpc.planet.find({ id: 1 })
+
+// Calls planet.create
+const newPlanet = await orpc.planet.create({ name: 'Earth' })
+```
+
+Each call returns a `Promise` typed with the procedure's output type. If the server throws an `ORPCError`, it propagates to the client as the same typed error class.
+
+## Available integrations
+
+<CardGroup cols={2}>
+  <Card title="RPC client" icon="code" href="/client/rpc-client">
+    Learn about `createORPCClient`, the safe client, and the proxy pattern.
+  </Card>
+  <Card title="Links" icon="link" href="/client/links">
+    RPCLink, DynamicLink, plugins, and custom headers.
+  </Card>
+  <Card title="Error handling" icon="circle-alert" href="/client/error-handling">
+    ORPCError, isDefinedError, and the safe() helper.
+  </Card>
+  <Card title="TanStack Query" icon="layers" href="/client/tanstack-query">
+    Works across React, Vue, Solid, Svelte, and Angular.
+  </Card>
+  <Card title="React Query" icon="atom" href="/client/react-query">
+    Framework-specific utilities for React.
+  </Card>
+  <Card title="Vue Query" icon="triangle" href="/client/vue-query">
+    Framework-specific composables for Vue.
+  </Card>
+  <Card title="Solid Query" icon="flame" href="/client/solid-query">
+    Reactive primitives for SolidJS.
+  </Card>
+  <Card title="Svelte Query" icon="sparkles" href="/client/svelte-query">
+    Svelte store integration.
+  </Card>
+  <Card title="SWR" icon="refresh-cw" href="/client/swr">
+    SWR integration for React.
+  </Card>
+  <Card title="Vue Colada" icon="database" href="/client/vue-colada">
+    Pinia Colada integration for Vue.
+  </Card>
+</CardGroup>

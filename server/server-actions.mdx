@@ -1,0 +1,97 @@
+---
+title: Server Actions
+description: Use oRPC procedures as Next.js Server Actions with full type safety and structured error handling.
+---
+
+oRPC integrates with React Server Actions on Next.js, TanStack Start, and other platforms that support the pattern.
+
+## `.actionable()`
+
+Call `.actionable()` on any procedure to produce a function compatible with the Server Action calling convention. It wraps the call in a try/catch and returns `[error, data]` tuples instead of throwing:
+
+```ts
+// app/actions/planet.ts
+'use server'
+
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+export const createPlanet = os
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input }) => {
+    return { id: 1, name: input.name }
+  })
+  .actionable()
+```
+
+On the client:
+
+```tsx
+import { createPlanet } from './actions/planet'
+
+async function handleSubmit() {
+  const [error, data] = await createPlanet({ name: 'Mars' })
+
+  if (error) {
+    console.error('Error code:', error.code)
+    return
+  }
+
+  console.log('Created:', data)
+}
+```
+
+## `ActionableClientResult`
+
+The return type of an actionable procedure is `[error: null, data: TOutput] | [error: ErrorJSON, data: undefined]`.
+
+When `error` is non-null, it is an `ORPCErrorJSON` object with:
+
+| Property  | Description                                |
+|-----------|--------------------------------------------|
+| `code`    | The error code string                      |
+| `status`  | HTTP status number                         |
+| `message` | Human-readable error message               |
+| `data`    | Optional structured data from `.errors()`  |
+| `defined` | `true` if the error was declared in the error map |
+
+## `@orpc/react` — `orpcAction`
+
+For integration with TanStack Query's `useMutation`, `@orpc/react` provides `orpcAction`:
+
+```ts
+import { orpcAction } from '@orpc/react'
+
+// Converts an actionable procedure to a standard async function
+// that throws on error instead of returning tuples
+const action = orpcAction(createPlanet)
+
+// Use with useMutation
+const mutation = useMutation({ mutationFn: action })
+```
+
+## Special framework errors
+
+Server Actions have special error types for redirects and not-found responses. oRPC detects and re-throws these automatically so framework navigation features work correctly:
+
+- **Next.js**: `error.digest?.startsWith('NEXT_')` errors are re-thrown.
+- **TanStack Router**: `Response` instances with `options` property and `{ isNotFound: true }` objects are re-thrown.
+
+## With context
+
+For procedures that require context (e.g., authentication), pass the context factory in `.actionable()`:
+
+```ts
+export const createPlanet = os
+  .$context<{ userId: string }>()
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input, context }) => {
+    return { id: 1, name: input.name, createdBy: context.userId }
+  })
+  .actionable({
+    context: async () => {
+      const session = await getServerSession()
+      return { userId: session.user.id }
+    },
+  })
+```

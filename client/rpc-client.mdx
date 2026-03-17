@@ -1,0 +1,143 @@
+---
+title: 'RPC client'
+description: 'Create a fully typed proxy client with createORPCClient and createSafeClient.'
+---
+
+## createORPCClient
+
+`createORPCClient(link, options?)` creates a proxy object that mirrors your router's shape. Every property access on the proxy builds up a path, and calling the resulting function dispatches a request through the provided link.
+
+```typescript
+import type { RouterClient } from '@orpc/server'
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { router } from './server'
+
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+})
+
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+### Type parameter
+
+Pass `RouterClient<typeof router>` (from `@orpc/server`) as the type argument so TypeScript can infer exact input, output, and error types for every procedure.
+
+```typescript
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+// orpc is fully typed — inputs, outputs and errors are all inferred
+const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+### Calling procedures
+
+The proxy mirrors your router shape. Property accesses are chainable, and the final call sends the request:
+
+```typescript
+// planet.list
+const planets = await orpc.planet.list({ limit: 10 })
+
+// planet.find
+const planet = await orpc.planet.find({ id: 1 })
+
+// planet.create — TypeScript will error if you omit required fields
+const created = await orpc.planet.create({ name: 'Mars', description: 'Red planet' })
+```
+
+Each call accepts an optional second argument for client options:
+
+```typescript
+const planets = await orpc.planet.list(
+  { limit: 10 },
+  {
+    signal: abortController.signal, // cancel inflight requests
+    context: { token: 'my-token' }, // pass context to the link
+  },
+)
+```
+
+### Base path option
+
+If you only want to expose a subset of your router, pass a `path` option:
+
+```typescript
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+// This client only knows about the planet sub-router
+const planetClient: RouterClient<typeof router.planet> = createORPCClient(link, {
+  path: ['planet'],
+})
+
+const planets = await planetClient.list({ limit: 10 })
+```
+
+## createSafeClient
+
+`createSafeClient(client)` wraps every procedure call in the `safe()` helper so that calls never throw. Instead they return a `SafeResult` tuple — or object — with `error`, `data`, `isDefined`, and `isSuccess` fields.
+
+```typescript
+import { createORPCClient, createSafeClient } from '@orpc/client'
+
+const orpc = createORPCClient<RouterClient<typeof router>>(link)
+const safeOrpc = createSafeClient(orpc)
+
+const result = await safeOrpc.planet.list({ limit: 10 })
+
+if (result.error) {
+  // result.error is typed
+  console.error(result.error.message)
+} else {
+  // result.data is typed as the procedure output
+  console.log(result.data)
+}
+```
+
+The result supports both tuple-style and object-style access:
+
+```typescript
+// Tuple style
+const [error, data, isDefined, isSuccess] = await safeOrpc.planet.list({ limit: 10 })
+
+// Object style
+const { error, data, isDefined, isSuccess } = await safeOrpc.planet.list({ limit: 10 })
+```
+
+See [Error handling](/client/error-handling) for details on `isDefined` and typed errors.
+
+## The .func pattern
+
+Because the client is a `Proxy`, calling `.call` on a procedure utils gives you the underlying function directly — useful when passing it to higher-order utilities:
+
+```typescript
+import { createRouterUtils } from '@orpc/tanstack-query'
+
+const utils = createRouterUtils(orpc)
+
+// utils.planet.list.call is the raw client function
+const fn = utils.planet.list.call
+const planets = await fn({ limit: 10 })
+```
+
+## Inferring types
+
+Several utility types let you extract types from a client without needing the server source:
+
+```typescript
+import type {
+  InferClientInputs,
+  InferClientOutputs,
+  InferClientErrors,
+} from '@orpc/client'
+import type { orpc } from './client'
+
+type Inputs = InferClientInputs<typeof orpc>
+type PlanetListInput = Inputs['planet']['list']
+// { limit?: number; cursor?: number }
+
+type Outputs = InferClientOutputs<typeof orpc>
+type PlanetListOutput = Outputs['planet']['list']
+```

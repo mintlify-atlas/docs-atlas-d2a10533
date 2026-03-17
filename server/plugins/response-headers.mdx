@@ -1,0 +1,92 @@
+---
+title: Response & Request Headers Plugins
+description: Access and modify HTTP headers from within oRPC procedures using ResponseHeadersPlugin and RequestHeadersPlugin.
+---
+
+oRPC provides two plugins for working with HTTP headers inside procedures without breaking the transport-agnostic design.
+
+## `ResponseHeadersPlugin`
+
+Injects a `Headers` instance (named `resHeaders`) into the context. Any headers written to it are merged into the final HTTP response.
+
+### Setup
+
+```ts
+import { RPCHandler } from '@orpc/server/node'
+import { ResponseHeadersPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [new ResponseHeadersPlugin()],
+})
+```
+
+Then declare the expected context shape:
+
+```ts
+import { os } from '@orpc/server'
+import type { ResponseHeadersPluginContext } from '@orpc/server/plugins'
+
+// ResponseHeadersPluginContext = { resHeaders?: Headers }
+const base = os.$context<ResponseHeadersPluginContext>()
+```
+
+### Using in procedures
+
+```ts
+const procedure = base
+  .handler(async ({ context }) => {
+    context.resHeaders?.set('x-custom-header', 'my-value')
+    context.resHeaders?.set('cache-control', 'public, max-age=60')
+    return { ok: true }
+  })
+```
+
+## `RequestHeadersPlugin`
+
+Injects a `Headers` instance (named `reqHeaders`) into the context, providing read access to the incoming request headers.
+
+### Setup
+
+```ts
+import { RPCHandler } from '@orpc/server/node'
+import { RequestHeadersPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [new RequestHeadersPlugin()],
+})
+```
+
+```ts
+import type { RequestHeadersPluginContext } from '@orpc/server/plugins'
+
+// RequestHeadersPluginContext = { reqHeaders?: Headers }
+const base = os.$context<RequestHeadersPluginContext>()
+```
+
+### Using in procedures
+
+```ts
+const procedure = base
+  .handler(async ({ context }) => {
+    const userAgent = context.reqHeaders?.get('user-agent')
+    return { userAgent }
+  })
+```
+
+## Using both together
+
+```ts
+import type { RequestHeadersPluginContext, ResponseHeadersPluginContext } from '@orpc/server/plugins'
+
+const base = os.$context<
+  RequestHeadersPluginContext & ResponseHeadersPluginContext
+>()
+
+const procedure = base.handler(async ({ context }) => {
+  const lang = context.reqHeaders?.get('accept-language') ?? 'en'
+  context.resHeaders?.set('content-language', lang)
+  return { lang }
+})
+```

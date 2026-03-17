@@ -1,0 +1,105 @@
+---
+title: WebSockets
+description: Add real-time bidirectional communication to your oRPC server with WebSocket adapters.
+---
+
+oRPC supports WebSocket connections through the `@orpc/server/websocket` adapter and several platform-specific adapters. The programming model uses the same `EventPublisher` and `eventIterator` primitives as [SSE streaming](/server/streaming-sse).
+
+## Supported adapters
+
+| Package | Environment |
+|---------|-------------|
+| `crossws` | Cloudflare, Deno, Bun, Node (via h3) |
+| `ws` | Node.js (`ws` library) |
+| `bun-ws` | Bun native WebSockets |
+| `message-port` | Browser `MessagePort` / `Worker` |
+
+## Basic WebSocket server (Node.js with `ws`)
+
+```ts
+import { WebSocketServer } from 'ws'
+import { RPCHandler } from '@orpc/server/websocket'
+import { router } from './router'
+
+const wss = new WebSocketServer({ port: 3001 })
+const handler = new RPCHandler(router)
+
+wss.on('connection', (ws) => {
+  handler.upgrade(ws, {
+    context: {}, // initial context
+  })
+})
+```
+
+## With Bun
+
+```ts
+import { RPCHandler } from '@orpc/server/bun-ws'
+import { router } from './router'
+
+const handler = new RPCHandler(router)
+
+Bun.serve({
+  port: 3001,
+  websocket: handler.websocket,
+  fetch(req, server) {
+    if (server.upgrade(req)) return
+    return new Response('Not found', { status: 404 })
+  },
+})
+```
+
+## Cloudflare Durable Objects — WebSocket hibernation
+
+For Cloudflare, use the hibernation pattern to avoid counting idle WebSocket connections against CPU limits:
+
+```ts
+import { RPCHandler } from '@orpc/server/websocket'
+import { EventPublisher } from '@orpc/server'
+import { router } from './router'
+
+const handler = new RPCHandler(router)
+
+export class ChatRoom implements DurableObject {
+  publisher = new EventPublisher()
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get('upgrade') === 'websocket') {
+      const { 0: client, 1: server } = new WebSocketPair()
+      this.ctx.acceptWebSocket(server)
+
+      await handler.upgrade(server, {
+        context: { room: this },
+      })
+
+      return new Response(null, { status: 101, webSocket: client })
+    }
+
+    return new Response('Expected WebSocket', { status: 426 })
+  }
+
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    handler.message(ws, message)
+  }
+
+  webSocketClose(ws: WebSocket) {
+    handler.close(ws)
+  }
+}
+```
+
+## Streaming over WebSockets
+
+Server-side streaming procedures work the same way over WebSockets as they do over HTTP. The client receives events as they are yielded:
+
+```ts
+const subscribe = os
+  .output(eventIterator(z.object({ text: z.string() })))
+  .handler(async function* ({ context, signal }) {
+    yield* context.room.publisher.subscribe('message', { signal })
+  })
+```
+
+<Tip>
+  WebSocket connections are bidirectional. You can call any procedure — streaming or not — over a WebSocket connection.
+</Tip>

@@ -1,0 +1,186 @@
+---
+title: 'SWR'
+description: 'Integrate oRPC with SWR in React using @orpc/experimental-react-swr.'
+---
+
+`@orpc/experimental-react-swr` provides utilities that generate fully typed SWR keys and fetchers from your oRPC client.
+
+<Warning>
+This package is experimental. The API may change between minor versions.
+</Warning>
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @orpc/experimental-react-swr swr
+```
+
+```bash yarn
+yarn add @orpc/experimental-react-swr swr
+```
+
+```bash pnpm
+pnpm add @orpc/experimental-react-swr swr
+```
+
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Create your oRPC client">
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+const link = new RPCLink({ url: '/rpc' })
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+  </Step>
+  <Step title="Create SWR utils">
+
+```typescript
+import { createSWRUtils } from '@orpc/experimental-react-swr'
+import { orpc } from './client'
+
+export const orpcUtils = createSWRUtils(orpc)
+```
+
+  </Step>
+</Steps>
+
+`createSWRUtils` returns a proxy with the same shape as your router. Each procedure exposes `key`, `fetcher`, `mutator`, `subscriber`, and `liveSubscriber`.
+
+## Data fetching with useSWR
+
+Use `key()` and `fetcher()` together:
+
+```tsx
+import useSWR from 'swr'
+import { orpcUtils } from './orpc'
+
+export function PlanetList() {
+  const { data, error, isLoading } = useSWR(
+    orpcUtils.planet.list.key({ input: { limit: 10 } }),
+    orpcUtils.planet.list.fetcher(),
+  )
+
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {data?.map(planet => (
+        <li key={planet.id}>{planet.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Key format
+
+The `key()` method returns `[path, { input }]`. The `fetcher()` function reads the input from this key automatically — you do not pass the input separately to the fetcher.
+
+## Mutations with useSWRMutation
+
+```tsx
+import useSWRMutation from 'swr/mutation'
+import { useSWRConfig } from 'swr'
+import { orpcUtils } from './orpc'
+
+export function CreatePlanetButton() {
+  const { mutate } = useSWRConfig()
+
+  const { trigger, isMutating } = useSWRMutation(
+    orpcUtils.planet.create.key({ input: undefined }),
+    orpcUtils.planet.create.mutator(),
+  )
+
+  return (
+    <button
+      disabled={isMutating}
+      onClick={async () => {
+        await trigger({ name: 'Mars', description: 'The red planet' })
+        // Revalidate the planet list
+        await mutate(orpcUtils.planet.list.matcher())
+      }}
+    >
+      Create planet
+    </button>
+  )
+}
+```
+
+## Manual revalidation
+
+The `matcher()` method returns a function that matches SWR keys. Pass it to `mutate` for pattern-based revalidation:
+
+```typescript
+import { useSWRConfig } from 'swr'
+
+const { mutate } = useSWRConfig()
+
+// Revalidate all planet.list queries
+await mutate(orpcUtils.planet.list.matcher())
+
+// Revalidate an exact key
+await mutate(orpcUtils.planet.list.matcher({ input: { limit: 10 }, strategy: 'exact' }))
+
+// Revalidate all planet queries
+await mutate(orpcUtils.planet.matcher())
+```
+
+The `strategy` option controls matching behaviour:
+- `'partial'` (default) — matches any key that is a superset of the expected key
+- `'exact'` — matches only the exact key
+
+## Subscriptions with useSWRSubscription
+
+For procedures that return an event iterator (streaming/SSE), use `subscriber()` to accumulate chunks:
+
+```tsx
+import useSWRSubscription from 'swr/subscription'
+import { orpcUtils } from './orpc'
+
+export function LiveFeed() {
+  const { data, error } = useSWRSubscription(
+    orpcUtils.notifications.stream.key({ input: {} }),
+    orpcUtils.notifications.stream.subscriber(),
+  )
+
+  // data is an array of accumulated chunks
+  return (
+    <ul>
+      {(data ?? []).map((item, i) => (
+        <li key={i}>{item.message}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### liveSubscriber
+
+Use `liveSubscriber()` if you only want the latest chunk instead of the accumulated array:
+
+```tsx
+const { data } = useSWRSubscription(
+  orpcUtils.ticker.price.key({ input: { symbol: 'BTC' } }),
+  orpcUtils.ticker.price.liveSubscriber(),
+)
+// data is the most recent price event
+```
+
+### Subscriber options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `refetchMode` | `'reset'` | `'reset'` clears data on reconnect; `'append'` keeps existing data and appends new chunks. |
+| `maxChunks` | — | Maximum number of chunks to store in the accumulated array. |

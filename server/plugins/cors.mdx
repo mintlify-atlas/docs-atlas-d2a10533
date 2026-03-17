@@ -1,0 +1,85 @@
+---
+title: CORS Plugin
+description: Add Cross-Origin Resource Sharing headers to oRPC responses.
+---
+
+The `CORSPlugin` adds CORS headers to your oRPC responses, allowing browsers to make cross-origin requests.
+
+## Usage
+
+```ts
+import { RPCHandler } from '@orpc/server/node'
+import { CORSPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [
+    new CORSPlugin({
+      origin: ['https://myapp.com', 'https://staging.myapp.com'],
+      credentials: true,
+    }),
+  ],
+})
+```
+
+## Default behavior
+
+Without any options, the plugin echoes back the request's `Origin` header as `Access-Control-Allow-Origin` and allows `GET, HEAD, PUT, POST, DELETE, PATCH` methods.
+
+```ts
+// Permissive default — allows any origin
+new CORSPlugin()
+
+// Wildcard origin
+new CORSPlugin({ origin: '*' })
+```
+
+## Options
+
+<ParamField body="origin" type="string | string[] | null | ((origin, options) => Promisable<string | string[] | null>)">
+  Allowed origins. Can be a string, an array of strings, `'*'` for wildcard, `null` to disallow all, or an async function that receives the request origin and returns the allowed value.
+
+  Default: echoes back the request origin.
+</ParamField>
+
+<ParamField body="allowMethods" type="string[]">
+  HTTP methods to allow in the `Access-Control-Allow-Methods` header.
+
+  Default: `['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH']`
+</ParamField>
+
+<ParamField body="allowHeaders" type="string[]">
+  HTTP headers to allow. If not set, echoes back `Access-Control-Request-Headers` from the preflight request.
+</ParamField>
+
+<ParamField body="exposeHeaders" type="string[]">
+  HTTP headers to expose via `Access-Control-Expose-Headers`.
+</ParamField>
+
+<ParamField body="maxAge" type="number">
+  Number of seconds the preflight response can be cached (`Access-Control-Max-Age`).
+</ParamField>
+
+<ParamField body="credentials" type="boolean">
+  Set `Access-Control-Allow-Credentials: true`. Required when the client sends cookies or authorization headers with `credentials: 'include'`.
+</ParamField>
+
+<ParamField body="timingOrigin" type="string | string[] | null | Function">
+  Sets the `Timing-Allow-Origin` header, using the same format as `origin`.
+</ParamField>
+
+## Dynamic origin
+
+```ts
+new CORSPlugin({
+  origin: async (origin, { request }) => {
+    const allowed = await db.isAllowedOrigin(origin)
+    return allowed ? origin : null
+  },
+  credentials: true,
+})
+```
+
+<Warning>
+  Setting `origin: '*'` with `credentials: true` is invalid per the CORS specification and will not work in browsers.
+</Warning>

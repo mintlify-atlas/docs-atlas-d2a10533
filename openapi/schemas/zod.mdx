@@ -1,0 +1,211 @@
+---
+title: Zod Schema Converter
+description: Use @orpc/zod to convert Zod schemas into JSON Schema for OpenAPI spec generation, plus extra schemas for File, Blob, URL, and more.
+---
+
+The `@orpc/zod` package provides a Zod-to-JSON Schema converter for oRPC's OpenAPI generator, plus a collection of extra Zod schemas for types that Zod doesn't natively support (File, Blob, URL, RegExp).
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/zod
+```
+
+```bash pnpm
+pnpm add @orpc/zod
+```
+
+```bash yarn
+yarn add @orpc/zod
+```
+</CodeGroup>
+
+## Schema converters
+
+`@orpc/zod` ships two converters — one for Zod v3 and one for Zod v4:
+
+<Tabs>
+  <Tab title="Zod v4 (recommended)">
+    ```typescript
+    import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+
+    const converter = new ZodToJsonSchemaConverter()
+    ```
+
+    Import from `@orpc/zod/zod4` when using Zod v4 (`zod` package ≥4.0).
+  </Tab>
+  <Tab title="Zod v3">
+    ```typescript
+    import { ZodToJsonSchemaConverter } from '@orpc/zod'
+
+    const converter = new ZodToJsonSchemaConverter()
+    ```
+
+    Import from `@orpc/zod` (the root) when using Zod v3 (`zod` package older than 4.0 or `zod/v3`).
+  </Tab>
+</Tabs>
+
+### Constructor options
+
+```typescript
+class ZodToJsonSchemaConverter implements ConditionalSchemaConverter {
+  constructor(options?: ZodToJsonSchemaOptions)
+}
+
+interface ZodToJsonSchemaOptions {
+  /**
+   * Max depth of lazy types before falling back to {}.
+   * @default 3
+   */
+  maxLazyDepth?: number
+
+  /**
+   * Max depth of nested types before falling back to {}.
+   * @default 10
+   */
+  maxStructureDepth?: number
+
+  /**
+   * JSON schema to use for `z.any()` / `z.unknown()`.
+   * @default {}
+   */
+  anyJsonSchema?: Exclude<JSONSchema, boolean>
+
+  /**
+   * JSON schema to use for unsupported Zod types.
+   * @default { not: {} }
+   */
+  unsupportedJsonSchema?: Exclude<JSONSchema, boolean>
+}
+```
+
+## Usage with OpenAPIGenerator
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import * as z from 'zod'
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new ZodToJsonSchemaConverter()],
+})
+
+const router = {
+  greet: os
+    .input(z.object({ name: z.string().min(1).max(100) }))
+    .output(z.object({ message: z.string() }))
+    .handler(async ({ input }) => ({ message: `Hello, ${input.name}!` })),
+}
+
+const spec = await generator.generate(router, {
+  info: { title: 'Hello API', version: '1.0.0' },
+})
+```
+
+## Extra schemas via `oz`
+
+The `oz` namespace exposes extra schema constructors for types Zod doesn't support natively:
+
+```typescript
+import { oz } from '@orpc/zod'
+```
+
+### `oz.file()`
+
+Validates a `File` instance. In JSON Schema, it generates `{ type: 'string', contentMediaType: '*/*' }`.
+
+```typescript
+import { oz } from '@orpc/zod'
+
+const schema = oz.file()
+// => validates File instances
+
+// Restrict to a specific MIME type:
+const imageSchema = oz.file().type('image/*')
+// => validates File with image/* MIME type
+// => JSON Schema: { type: 'string', contentMediaType: 'image/*' }
+```
+
+### `oz.blob()`
+
+Validates a `Blob` instance. In JSON Schema, it generates `{ type: 'string', contentMediaType: '*/*' }`.
+
+```typescript
+const schema = oz.blob()
+// => validates Blob instances
+```
+
+### `oz.url()`
+
+Validates a `URL` instance. In JSON Schema, it generates `{ type: 'string', format: 'uri', 'x-native-type': 'url' }`.
+
+```typescript
+const schema = oz.url()
+// => validates URL instances
+```
+
+### `oz.regexp()`
+
+Validates a `RegExp` instance. In JSON Schema, it generates `{ type: 'string', pattern: '^\\/(.*)\\/([a-z]*)$', 'x-native-type': 'regexp' }`.
+
+```typescript
+const schema = oz.regexp()
+// => validates RegExp instances
+```
+
+### `oz.openapi()` — custom JSON Schema override
+
+Attach custom JSON Schema metadata to any Zod schema:
+
+```typescript
+import { oz } from '@orpc/zod'
+import * as z from 'zod'
+
+// Apply to both input and output:
+const taggedSchema = oz.openapi(
+  z.string(),
+  { description: 'A planet name', examples: ['Earth', 'Mars'] },
+)
+
+// Apply only to input:
+const inputOnlySchema = oz.openapi(
+  z.string(),
+  { format: 'password' },
+  { strategy: 'input' },
+)
+
+// Apply only to output:
+const outputOnlySchema = oz.openapi(
+  z.string(),
+  { readOnly: true },
+  { strategy: 'output' },
+)
+```
+
+## Supported Zod types
+
+The converter handles all standard Zod types:
+
+| Zod type | JSON Schema |
+|---|---|
+| `z.string()` | `{ type: 'string' }` + format/pattern from checks |
+| `z.number()` | `{ type: 'number' }` or `{ type: 'integer' }` |
+| `z.boolean()` | `{ type: 'boolean' }` |
+| `z.null()` | `{ type: 'null' }` |
+| `z.bigint()` | `{ type: 'string', pattern: '^-?[0-9]+$', 'x-native-type': 'bigint' }` |
+| `z.date()` | `{ type: 'string', format: 'date-time', 'x-native-type': 'date' }` |
+| `z.array()` | `{ type: 'array', items: ... }` |
+| `z.object()` | `{ type: 'object', properties: ..., required: ... }` |
+| `z.record()` | `{ type: 'object', additionalProperties: ... }` |
+| `z.enum()` | `{ enum: [...] }` |
+| `z.union()` | `{ anyOf: [...] }` |
+| `z.intersection()` | `{ allOf: [...] }` |
+| `z.tuple()` | `{ type: 'array', prefixItems: [...] }` |
+| `z.set()` | `{ type: 'array', uniqueItems: true, 'x-native-type': 'set' }` |
+| `z.map()` | `{ type: 'array', items: ..., 'x-native-type': 'map' }` |
+| `z.optional()` | unwrapped inner schema, `required: false` |
+| `z.nullable()` | `{ anyOf: [inner, { type: 'null' }] }` |
+| `z.default()` | inner schema + `default` value |
+| `z.lazy()` | resolves recursively up to `maxLazyDepth` |
+| `z.any()` / `z.unknown()` | `{}` (any value) |

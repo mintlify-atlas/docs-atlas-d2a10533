@@ -1,0 +1,94 @@
+---
+title: "Why oRPC"
+description: "How oRPC compares to tRPC and ts-rest, and what makes it the right choice for APIs that need both type safety and OpenAPI."
+---
+
+oRPC is a TypeScript RPC framework that gives you end-to-end type safety **and** a first-class OpenAPI story — without code generation, without a separate HTTP client layer, and without locking you into a single runtime.
+
+## Key features
+
+- **End-to-end type safety** — inputs, outputs, and errors are typed from server to client.
+- **First-class OpenAPI** — generate a compliant spec from your router with no extra annotations.
+- **Contract-first development** — optionally define your API contract before writing handlers.
+- **No code generation** — your TypeScript types are your contract.
+- **Native types** — `Date`, `File`, `Blob`, `BigInt`, `URL` work without serialization wrappers.
+- **SSE and streaming** — full type-safe server-sent events and streaming responses.
+- **Multi-runtime** — runs on Node.js, Cloudflare Workers, Deno, Bun, and any Fetch-compatible environment.
+- **Standard Schema support** — works with Zod, Valibot, ArkType, and more.
+- **OpenTelemetry** — built-in observability integration via `@orpc/otel`.
+
+## oRPC vs tRPC
+
+[tRPC](https://trpc.io) pioneered end-to-end type-safe RPC in TypeScript, and oRPC owes it a lot. If you're happy with tRPC and don't need OpenAPI or contract-first workflows, tRPC is a solid choice.
+
+| | oRPC | tRPC |
+|---|---|---|
+| End-to-end type safety | Yes | Yes |
+| OpenAPI generation | Built-in | Requires adapters / workarounds |
+| Contract-first | Yes (`@orpc/contract`) | No |
+| Native types (Date, File, Blob) | Yes | Requires transformers |
+| SSE / streaming | Yes | Yes (experimental) |
+| Multi-runtime | Yes | Depends on adapter |
+| Code generation | No | No |
+
+**When to choose oRPC over tRPC:**
+- You need to publish an OpenAPI spec for external consumers or partner integrations.
+- You want to define an API contract that separate teams can implement against.
+- You work with native types like `File` or `Blob` without custom serializers.
+
+## oRPC vs ts-rest
+
+[ts-rest](https://ts-rest.com) takes a REST/OpenAPI-first approach that inspired oRPC's contract layer. ts-rest is excellent if your team wants to stay close to HTTP conventions and you already have an OpenAPI spec.
+
+| | oRPC | ts-rest |
+|---|---|---|
+| End-to-end type safety | Yes | Yes |
+| OpenAPI generation | Built-in | Built-in |
+| Client style | Typed function calls | Typed fetch client |
+| Native types (Date, File, Blob) | Yes | Limited |
+| SSE / streaming | Yes | Limited |
+| Runtime-agnostic | Yes | Yes |
+| Schema validators | Zod, Valibot, ArkType, … | Zod |
+
+**When to choose oRPC over ts-rest:**
+- You prefer calling procedures as typed functions rather than constructing HTTP requests.
+- You want to use Valibot, ArkType, or another schema validator alongside Zod.
+- You need streaming or SSE with full type safety.
+- You want middleware-based context enrichment (e.g., auth, logging) baked into the procedure chain.
+
+## When not to use oRPC
+
+oRPC is not the right fit if:
+
+- You have an existing REST API that you don't control and only need a typed client — use `openapi-typescript` or Hey API instead.
+- Your team strongly prefers a REST architecture with manually defined routes and HTTP verbs over an RPC mental model.
+
+## The oRPC approach
+
+oRPC builds on two simple ideas:
+
+1. **Procedures** — a single async function with typed input, typed output, and typed errors.
+2. **Routers** — a plain object that nests procedures into a hierarchy.
+
+From that hierarchy, oRPC can serve an RPC API, generate an OpenAPI spec, and produce a fully typed client — all from the same source of truth with no duplication.
+
+```typescript
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+// One definition → type-safe RPC + OpenAPI spec + typed client
+export const listPlanet = os
+  .input(z.object({ limit: z.number().optional() }))
+  .handler(async ({ input }) => {
+    return [{ id: 1, name: 'Earth' }]
+  })
+```
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first oRPC API in five minutes.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/procedures">
+    Understand procedures, routers, middleware, and context.
+  </Card>
+</CardGroup>

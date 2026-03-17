@@ -1,0 +1,124 @@
+---
+title: Server Overview
+description: Introduction to @orpc/server — the package for building type-safe RPC APIs and implementing contracts.
+---
+
+`@orpc/server` is the core server-side package for oRPC. It lets you define procedures, compose routers, attach middleware, and serve requests over HTTP or any other transport.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/server
+```
+```bash yarn
+yarn add @orpc/server
+```
+```bash pnpm
+pnpm add @orpc/server
+```
+```bash bun
+bun add @orpc/server
+```
+</CodeGroup>
+
+## The `os` builder
+
+Everything starts with the `os` export — a pre-configured `Builder` instance you use to define procedures, middleware, and routers.
+
+```ts
+import { os } from '@orpc/server'
+
+// Define a simple procedure
+const hello = os
+  .input(/* zod / valibot / arktype schema */)
+  .output(/* schema */)
+  .handler(async ({ input }) => {
+    return { message: `Hello, ${input.name}!` }
+  })
+```
+
+The builder is fully chainable. Every method call returns a new builder so your original `os` instance is never mutated. This means you can safely derive shared base builders:
+
+```ts
+// A base builder with shared context type
+const base = os.$context<{ userId: string }>()
+
+// A base builder with shared error definitions
+const authed = base.errors({
+  UNAUTHORIZED: { status: 401, message: 'Not authenticated' },
+})
+```
+
+## Quick example
+
+```ts
+import { ORPCError, os } from '@orpc/server'
+import * as z from 'zod'
+
+const listPlanets = os
+  .input(z.object({ limit: z.number().int().min(1).max(100).optional() }))
+  .handler(async ({ input }) => {
+    return [{ id: 1, name: 'Earth' }]
+  })
+
+const createPlanet = os
+  .$context<{ headers: Record<string, string> }>()
+  .use(({ context, next }) => {
+    const user = parseJWT(context.headers.authorization?.split(' ')[1])
+    if (user) return next({ context: { user } })
+    throw new ORPCError('UNAUTHORIZED')
+  })
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input, context }) => {
+    return { id: 2, name: input.name }
+  })
+
+export const router = {
+  planet: { list: listPlanets, create: createPlanet },
+}
+```
+
+## What's in this section
+
+<CardGroup cols={2}>
+  <Card title="Procedures" href="/server/procedures">
+    Define typed inputs, outputs, errors, and handlers.
+  </Card>
+  <Card title="Routers" href="/server/routers">
+    Compose procedures into nested routers.
+  </Card>
+  <Card title="Middleware" href="/server/middleware">
+    Intercept and transform the pipeline with middleware.
+  </Card>
+  <Card title="Context" href="/server/context">
+    Pass request-scoped data through the call stack.
+  </Card>
+  <Card title="Errors" href="/server/errors">
+    Typed, serializable errors with ORPCError.
+  </Card>
+  <Card title="Contract-First" href="/server/contract/overview">
+    Define the API shape before implementing it.
+  </Card>
+  <Card title="Adapters" href="/server/adapters/fetch">
+    Plug in to Node.js, Fetch, Fastify, AWS Lambda, and more.
+  </Card>
+  <Card title="Plugins" href="/server/plugins/cors">
+    CORS, batching, CSRF protection, and response headers.
+  </Card>
+  <Card title="Server Actions" href="/server/server-actions">
+    Use oRPC procedures as Next.js Server Actions.
+  </Card>
+  <Card title="Streaming & SSE" href="/server/streaming-sse">
+    Stream responses with typed async iterators.
+  </Card>
+  <Card title="WebSockets" href="/server/websockets">
+    Real-time two-way communication over WebSockets.
+  </Card>
+  <Card title="OpenTelemetry" href="/server/opentelemetry">
+    Distributed tracing with @orpc/otel.
+  </Card>
+  <Card title="NestJS" href="/server/nestjs">
+    Deep integration with the NestJS framework.
+  </Card>
+</CardGroup>

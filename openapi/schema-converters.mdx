@@ -1,0 +1,134 @@
+---
+title: Schema Converters
+description: Schema converters translate your validation schemas into JSON Schema for OpenAPI spec generation.
+---
+
+A schema converter bridges your validation library (Zod, Valibot, ArkType) and oRPC's OpenAPI generator. The generator itself is schema-library agnostic — it delegates all schema-to-JSON Schema translation to converters.
+
+## The `SchemaConverter` interface
+
+```typescript
+interface SchemaConverter {
+  convert(
+    schema: AnySchema | undefined,
+    options: SchemaConvertOptions,
+  ): Promisable<[required: boolean, jsonSchema: JSONSchema]>
+}
+
+interface SchemaConvertOptions {
+  strategy: 'input' | 'output'
+  components?: readonly SchemaConverterComponent[]
+  minStructureDepthForRef?: number
+}
+```
+
+Every converter receives:
+
+- **`strategy`** — whether to convert the schema for an input (request body) or output (response body). This matters for schemas that transform data between input and output.
+- **`components`** — a list of registered `$ref` components from `commonSchemas`. The converter should emit `{ $ref: ... }` when a schema matches a component.
+- **`minStructureDepthForRef`** — the minimum depth at which `$ref` substitution is allowed.
+
+The return value is a tuple `[required, jsonSchema]`:
+
+- **`required`** (`boolean`) — whether this schema represents a required/non-optional value
+- **`jsonSchema`** — the JSON Schema representation
+
+## `ConditionalSchemaConverter`
+
+Most converters implement `ConditionalSchemaConverter`, which adds a `condition` method:
+
+```typescript
+interface ConditionalSchemaConverter extends SchemaConverter {
+  condition(
+    schema: AnySchema | undefined,
+    options: SchemaConvertOptions,
+  ): Promisable<boolean>
+}
+```
+
+The `condition` method returns `true` when the converter can handle the given schema. This is how `CompositeSchemaConverter` picks the right converter for each schema.
+
+## `CompositeSchemaConverter`
+
+`CompositeSchemaConverter` tries each registered converter in order and delegates to the first one whose `condition` returns `true`.
+
+```typescript
+class CompositeSchemaConverter implements SchemaConverter {
+  constructor(converters: readonly ConditionalSchemaConverter[])
+
+  async convert(
+    schema: AnySchema | undefined,
+    options: SchemaConvertOptions,
+  ): Promise<[required: boolean, jsonSchema: JSONSchema]>
+}
+```
+
+If no converter matches, it returns `[false, {}]` (an empty JSON Schema, meaning any value is accepted).
+
+### Mixing multiple schema libraries
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import { experimental_ValibotToJsonSchemaConverter } from '@orpc/valibot'
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [
+    new ZodToJsonSchemaConverter(),
+    new experimental_ValibotToJsonSchemaConverter(),
+  ],
+})
+```
+
+You can register as many converters as needed. The composite will route each schema to the correct converter based on its `condition`.
+
+## Built-in converters
+
+<CardGroup cols={3}>
+  <Card title="ZodToJsonSchemaConverter" href="/openapi/schemas/zod">
+    From `@orpc/zod` or `@orpc/zod/zod4`. Supports Zod v3 and v4.
+  </Card>
+  <Card title="experimental_ValibotToJsonSchemaConverter" href="/openapi/schemas/valibot">
+    From `@orpc/valibot`. Wraps `@valibot/to-json-schema`.
+  </Card>
+  <Card title="experimental_ArkTypeToJsonSchemaConverter" href="/openapi/schemas/arktype">
+    From `@orpc/arktype`. Uses ArkType's built-in `toJsonSchema()`.
+  </Card>
+</CardGroup>
+
+## Writing a custom converter
+
+To support a schema library not covered by the built-ins, implement `ConditionalSchemaConverter`:
+
+```typescript
+import type { ConditionalSchemaConverter, JSONSchema, SchemaConvertOptions } from '@orpc/openapi'
+import type { AnySchema } from '@orpc/contract'
+
+export class MyLibraryConverter implements ConditionalSchemaConverter {
+  condition(schema: AnySchema | undefined): boolean {
+    // Return true if this schema comes from your library
+    return schema !== undefined && (schema as any)['~standard']?.vendor === 'my-library'
+  }
+
+  convert(
+    schema: AnySchema | undefined,
+    options: SchemaConvertOptions,
+  ): [required: boolean, jsonSchema: JSONSchema] {
+    // Convert schema to JSON Schema
+    const jsonSchema = myLibraryToJsonSchema(schema, options.strategy)
+    return [true, jsonSchema]
+  }
+}
+```
+
+Then pass it to `OpenAPIGenerator`:
+
+```typescript
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new MyLibraryConverter()],
+})
+```
+
+<Note>
+  The `condition` method receives the raw schema object. The `~standard` property is the [Standard Schema](https://github.com/standard-schema/standard-schema) interface — `vendor` identifies the schema library.
+</Note>

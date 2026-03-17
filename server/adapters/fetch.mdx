@@ -1,0 +1,134 @@
+---
+title: Fetch Adapter
+description: Serve oRPC over any fetch-compatible runtime — Cloudflare Workers, Deno, Bun, and more.
+---
+
+The fetch adapter exposes your router over the standard [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API). It works in any environment that supports `Request` and `Response`: Cloudflare Workers, Deno, Bun, and modern Node.js.
+
+## Installation
+
+The fetch adapter is included in `@orpc/server`. Import from the subpath:
+
+```ts
+import { RPCHandler } from '@orpc/server/fetch'
+```
+
+## Basic usage
+
+```ts
+import { RPCHandler } from '@orpc/server/fetch'
+import { CORSPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [new CORSPlugin()],
+})
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const result = await handler.handle(request, {
+      context: {}, // initial context
+    })
+
+    if (!result.matched) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    return result.response
+  },
+}
+```
+
+## `handle(request, options)`
+
+The `handle` method processes a single request:
+
+| Parameter         | Type                 | Description                              |
+|-------------------|----------------------|------------------------------------------|
+| `request`         | `Request`            | The incoming fetch Request               |
+| `options.context` | Initial context type | Context passed to the first middleware   |
+| `options.prefix`  | `string` (optional)  | Strip this prefix before routing        |
+
+Returns `{ matched: true, response: Response }` if a procedure was matched, or `{ matched: false, response: undefined }` otherwise.
+
+## Cloudflare Workers
+
+```ts
+import { RPCHandler } from '@orpc/server/fetch'
+import { router } from './router'
+
+const handler = new RPCHandler(router)
+
+export default {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const result = await handler.handle(request, {
+      context: { env, ctx }, // pass Cloudflare bindings as context
+    })
+
+    if (!result.matched) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    return result.response
+  },
+}
+```
+
+## Bun
+
+```ts
+import { RPCHandler } from '@orpc/server/fetch'
+import { router } from './router'
+
+const handler = new RPCHandler(router)
+
+Bun.serve({
+  port: 3000,
+  async fetch(request: Request) {
+    const result = await handler.handle(request)
+
+    if (!result.matched) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    return result.response
+  },
+})
+```
+
+## Deno
+
+```ts
+import { RPCHandler } from 'npm:@orpc/server/fetch'
+import { router } from './router.ts'
+
+const handler = new RPCHandler(router)
+
+Deno.serve(async (request: Request) => {
+  const result = await handler.handle(request)
+
+  if (!result.matched) {
+    return new Response('Not found', { status: 404 })
+  }
+
+  return result.response
+})
+```
+
+## Options
+
+<ParamField body="plugins" type="FetchHandlerPlugin[]">
+  Array of plugins to apply to the handler. See [Plugins](/server/plugins/cors) for available plugins.
+</ParamField>
+
+<ParamField body="strictGetMethodPluginEnabled" type="boolean" default="true">
+  When enabled, non-mutation procedures are restricted to GET requests. Disable only if you have a specific reason.
+</ParamField>
+
+<ParamField body="adapterInterceptors" type="Interceptor[]">
+  Low-level interceptors that run around the entire fetch handling cycle.
+</ParamField>

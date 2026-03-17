@@ -1,0 +1,163 @@
+---
+title: "@orpc/otel"
+description: Complete API reference for @orpc/otel — OpenTelemetry instrumentation for oRPC servers and clients.
+---
+
+The `@orpc/otel` package provides [OpenTelemetry](https://opentelemetry.io/) integration for oRPC. It uses the standard `InstrumentationBase` pattern from `@opentelemetry/instrumentation`, making it compatible with any OpenTelemetry SDK setup.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/otel @opentelemetry/api @opentelemetry/instrumentation
+```
+
+```bash pnpm
+pnpm add @orpc/otel @opentelemetry/api @opentelemetry/instrumentation
+```
+</CodeGroup>
+
+---
+
+## `ORPCInstrumentation`
+
+The main instrumentation class. Extend from `InstrumentationBase` and integrates with the OpenTelemetry SDK's `registerInstrumentations` pattern.
+
+```typescript
+import { ORPCInstrumentation } from '@orpc/otel'
+```
+
+### Constructor
+
+```typescript
+class ORPCInstrumentation extends InstrumentationBase {
+  constructor(config?: ORPCInstrumentationConfig)
+}
+
+interface ORPCInstrumentationConfig extends InstrumentationConfig {}
+```
+
+`ORPCInstrumentationConfig` extends the standard `InstrumentationConfig` from `@opentelemetry/instrumentation`, which includes:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `true` | Whether the instrumentation is active |
+
+### `enable()`
+
+Activates oRPC's global OpenTelemetry integration, setting up the tracer, context propagation, and trace API:
+
+```typescript
+instrumentation.enable()
+```
+
+Internally, this calls `setGlobalOtelConfig()` with the active tracer and propagation APIs from `@opentelemetry/api`.
+
+### `disable()`
+
+Deactivates the integration:
+
+```typescript
+instrumentation.disable()
+```
+
+---
+
+## Setup
+
+### With Node.js SDK (recommended)
+
+```typescript
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
+import { ORPCInstrumentation } from '@orpc/otel'
+
+const sdk = new NodeSDK({
+  traceExporter: new OTLPTraceExporter({
+    url: 'http://localhost:4318/v1/traces',
+  }),
+  instrumentations: [
+    new ORPCInstrumentation(),
+  ],
+})
+
+sdk.start()
+```
+
+### Manual setup
+
+```typescript
+import { registerInstrumentations } from '@opentelemetry/instrumentation'
+import { ORPCInstrumentation } from '@orpc/otel'
+
+registerInstrumentations({
+  instrumentations: [new ORPCInstrumentation()],
+})
+```
+
+<Note>
+  `ORPCInstrumentation` must be registered before your oRPC server or client code runs. The instrumentation hooks into oRPC's global configuration at enable time.
+</Note>
+
+---
+
+## What gets traced
+
+Once instrumentation is enabled, oRPC automatically creates spans for:
+
+- **Procedure execution** — each procedure call creates a span named after the procedure path
+- **Middleware pipeline** — middleware execution is traced as child spans
+- **Context propagation** — trace context is propagated across requests using the W3C Trace Context standard
+
+### Span attributes
+
+Spans include standard attributes such as:
+
+| Attribute | Value |
+|---|---|
+| `rpc.system` | `'orpc'` |
+| `rpc.method` | Procedure path (e.g. `planet.list`) |
+| `rpc.grpc.status_code` | Status code on error |
+| `error.type` | Error code on failure |
+
+---
+
+## Example: full observability setup
+
+```typescript
+// instrumentation.ts (loaded before all other code)
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node'
+import { ORPCInstrumentation } from '@orpc/otel'
+
+const sdk = new NodeSDK({
+  spanProcessors: [new SimpleSpanProcessor(new ConsoleSpanExporter())],
+  instrumentations: [new ORPCInstrumentation()],
+})
+
+sdk.start()
+process.on('SIGTERM', () => sdk.shutdown())
+```
+
+```typescript
+// server.ts
+import './instrumentation' // must be first
+import { RPCHandler } from '@orpc/server/node'
+import { router } from './router'
+
+const handler = new RPCHandler(router)
+// All procedure calls are now automatically traced
+```
+
+---
+
+## Compatibility
+
+`ORPCInstrumentation` works with any OpenTelemetry-compatible backend:
+
+- [Jaeger](https://www.jaegertracing.io/)
+- [Zipkin](https://zipkin.io/)
+- [Grafana Tempo](https://grafana.com/oss/tempo/)
+- [Honeycomb](https://www.honeycomb.io/)
+- [Datadog](https://www.datadoghq.com/)
+- Any OTLP-compatible collector

@@ -1,0 +1,169 @@
+---
+title: 'Vue Query'
+description: 'Integrate oRPC with TanStack Query in Vue using @orpc/vue-query.'
+---
+
+`@orpc/vue-query` provides Vue-specific utilities for TanStack Query. It wraps `@tanstack/vue-query` types and handles Vue's reactive refs automatically — inputs and context can be plain values or `MaybeRefOrGetter`.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @orpc/vue-query @tanstack/vue-query
+```
+
+```bash yarn
+yarn add @orpc/vue-query @tanstack/vue-query
+```
+
+```bash pnpm
+pnpm add @orpc/vue-query @tanstack/vue-query
+```
+
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Install the Vue Query plugin">
+
+```typescript
+import { VueQueryPlugin } from '@tanstack/vue-query'
+import { createApp } from 'vue'
+import App from './App.vue'
+
+const app = createApp(App)
+app.use(VueQueryPlugin)
+app.mount('#app')
+```
+
+  </Step>
+  <Step title="Create your oRPC client">
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+const link = new RPCLink({ url: '/rpc' })
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+  </Step>
+  <Step title="Create Vue Query utils">
+
+```typescript
+import { createORPCVueQueryUtils } from '@orpc/vue-query'
+import { orpc } from './client'
+
+export const orpcUtils = createORPCVueQueryUtils(orpc)
+```
+
+  </Step>
+</Steps>
+
+## useQuery
+
+```vue
+<script setup lang="ts">
+import { useQuery } from '@tanstack/vue-query'
+import { orpcUtils } from './orpc'
+
+const { data, isLoading, error } = useQuery(
+  orpcUtils.planet.list.queryOptions({ input: { limit: 10 } }),
+)
+</script>
+
+<template>
+  <div v-if="isLoading">Loading...</div>
+  <div v-else-if="error">{{ error.message }}</div>
+  <ul v-else>
+    <li v-for="planet in data" :key="planet.id">{{ planet.name }}</li>
+  </ul>
+</template>
+```
+
+## Reactive inputs
+
+Because inputs can be `MaybeRefOrGetter`, you can pass reactive refs directly and the query will re-run when the ref changes:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+import { orpcUtils } from './orpc'
+
+const limit = ref(10)
+
+const { data } = useQuery(
+  orpcUtils.planet.list.queryOptions({ input: limit }),
+)
+// The query re-fetches automatically when `limit` changes
+</script>
+```
+
+## useInfiniteQuery
+
+```vue
+<script setup lang="ts">
+import { useInfiniteQuery } from '@tanstack/vue-query'
+import { orpcUtils } from './orpc'
+
+const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
+  orpcUtils.planet.list.infiniteOptions({
+    input: pageParam => ({ cursor: pageParam, limit: 10 }),
+    initialPageParam: 0,
+    getNextPageParam: lastPage => lastPage.nextCursor,
+  }),
+)
+</script>
+```
+
+## useMutation
+
+```vue
+<script setup lang="ts">
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { orpcUtils } from './orpc'
+
+const queryClient = useQueryClient()
+
+const { mutate, isPending } = useMutation(
+  orpcUtils.planet.create.mutationOptions({
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: orpcUtils.planet.list.queryKey(),
+      })
+    },
+  }),
+)
+</script>
+
+<template>
+  <button :disabled="isPending" @click="mutate({ name: 'Mars' })">
+    Create planet
+  </button>
+</template>
+```
+
+## Cache invalidation
+
+```typescript
+const queryClient = useQueryClient()
+
+// All planet.list queries
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.list.queryKey(),
+})
+
+// All planet queries
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.key(),
+})
+```
+
+<Note>
+`@orpc/vue-query` uses `@tanstack/vue-query` types. The `queryOptions()` return value includes a reactive `queryKey` (a `ComputedRef`) so that TanStack Query re-subscribes when inputs change.
+</Note>

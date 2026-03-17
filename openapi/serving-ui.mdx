@@ -1,0 +1,196 @@
+---
+title: Serving an API UI
+description: Use OpenAPIHandler and OpenAPIReferencePlugin to serve your API as a standard HTTP endpoint and render interactive documentation.
+---
+
+oRPC can serve your router as a standard OpenAPI-compatible HTTP API — no custom RPC client needed. Any HTTP client or OpenAPI-generated SDK can call it directly.
+
+There are two complementary tools:
+
+- **`OpenAPIHandler`** — handles inbound HTTP requests and routes them to your procedures using OpenAPI-style path + method matching.
+- **`OpenAPIReferencePlugin`** — serves an auto-generated spec at `/spec.json` and an interactive UI (Scalar or Swagger UI) at `/`.
+
+## OpenAPIHandler
+
+The `OpenAPIHandler` works like the `RPCHandler` but speaks standard HTTP instead of the oRPC binary protocol. Any client that sends a proper `POST /planet/list` request (with a JSON body) will work.
+
+<Tabs>
+  <Tab title="Fetch (Cloudflare, Deno, Bun)">
+    ```typescript
+    import { OpenAPIHandler } from '@orpc/openapi/fetch'
+    import { router } from './router'
+
+    const handler = new OpenAPIHandler(router)
+
+    export default {
+      fetch(request: Request) {
+        return handler.handle(request, {
+          prefix: '/api',
+          context: {},
+        })
+      },
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ```typescript
+    import { createServer } from 'node:http'
+    import { OpenAPIHandler } from '@orpc/openapi/node'
+    import { router } from './router'
+
+    const handler = new OpenAPIHandler(router)
+
+    const server = createServer(async (req, res) => {
+      const result = await handler.handle(req, res, {
+        prefix: '/api',
+        context: {},
+      })
+
+      if (!result.matched) {
+        res.statusCode = 404
+        res.end('Not found')
+      }
+    })
+
+    server.listen(3000)
+    ```
+  </Tab>
+</Tabs>
+
+### How routing works
+
+By default, oRPC maps procedure paths to HTTP routes using a convention:
+
+- `planet.list` → `POST /planet/list`
+- `planet.find` → `POST /planet/find`
+
+You can override this with the `route` option on a procedure:
+
+```typescript
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+const listPlanets = os
+  .route({ method: 'GET', path: '/planets' })
+  .input(z.object({ limit: z.number().optional() }))
+  .handler(async ({ input }) => [])
+```
+
+<Note>
+  The `OpenAPIHandler` only handles procedures that have a defined route (method + path), either explicitly via `.route()` or by convention. Procedures with no route config fall back to the default `POST /{path}` pattern.
+</Note>
+
+## OpenAPIReferencePlugin
+
+The `OpenAPIReferencePlugin` is a plugin for `RPCHandler` or `OpenAPIHandler` that automatically:
+
+1. Generates your OpenAPI spec on demand
+2. Serves it at a configurable path (default: `/spec.json`)
+3. Renders an interactive UI (default: Scalar, also supports Swagger UI) at a configurable path (default: `/`)
+
+```typescript
+import { RPCHandler } from '@orpc/server/fetch'
+import { OpenAPIReferencePlugin } from '@orpc/openapi/plugins'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [
+    new OpenAPIReferencePlugin({
+      schemaConverters: [new ZodToJsonSchemaConverter()],
+      specGenerateOptions: {
+        info: { title: 'Planet API', version: '1.0.0' },
+      },
+      docsPath: '/docs',
+      specPath: '/docs/spec.json',
+    }),
+  ],
+})
+
+export default {
+  fetch(request: Request) {
+    return handler.handle(request)
+  },
+}
+```
+
+### Plugin options
+
+<ParamField body="schemaConverters" type="ConditionalSchemaConverter[]">
+  Schema converters for spec generation. Required to produce a meaningful spec.
+</ParamField>
+
+<ParamField body="specGenerateOptions" type="OpenAPIGeneratorGenerateOptions | ((options) => Promisable<OpenAPIGeneratorGenerateOptions>)">
+  Options forwarded to `OpenAPIGenerator.generate()`. Can be a value or an async function.
+</ParamField>
+
+<ParamField body="specPath" type="string" default="/spec.json">
+  URL path at which to serve the OpenAPI JSON document.
+</ParamField>
+
+<ParamField body="docsPath" type="string" default="/">
+  URL path at which to serve the interactive API UI.
+</ParamField>
+
+<ParamField body="docsProvider" type="'scalar' | 'swagger'" default="scalar">
+  The UI library to render. `'scalar'` renders [Scalar](https://scalar.com), `'swagger'` renders Swagger UI.
+</ParamField>
+
+<ParamField body="docsTitle" type="string | ((options) => Promisable<string>)" default="API Reference">
+  The document title for the docs page.
+</ParamField>
+
+<ParamField body="docsConfig" type="Record<string, unknown> | ((options) => Promisable<Record<string, unknown>>)">
+  Arbitrary config object passed to the UI library (e.g. Scalar or Swagger UI config).
+</ParamField>
+
+<ParamField body="docsHead" type="string | ((options) => Promisable<string>)">
+  Raw HTML to inject into the `<head>` of the docs page.
+</ParamField>
+
+<ParamField body="docsScriptUrl" type="string | ((options) => Promisable<string>)">
+  URL of the external script bundle. Defaults to the CDN URL for Scalar or Swagger UI.
+</ParamField>
+
+<ParamField body="renderDocsHtml" type="(specUrl, title, head, scriptUrl, config, spec, provider, cssUrl) => string">
+  Fully custom HTML renderer. Override if you need complete control over the docs page.
+</ParamField>
+
+## Serving a UI separately
+
+If you generate the spec yourself and want to serve Scalar or Swagger UI separately, you can host the spec JSON at any URL and point the UI at it:
+
+```html
+<!-- Scalar (recommended) -->
+<!doctype html>
+<html>
+  <head><title>API Reference</title></head>
+  <body>
+    <div id="app"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script>
+      Scalar.createApiReference('#app', {
+        url: '/spec.json',
+      })
+    </script>
+  </body>
+</html>
+```
+
+## Calling the API from a non-oRPC client
+
+Once served through `OpenAPIHandler`, any HTTP client can call your API:
+
+```bash
+# GET with query params
+curl 'https://api.example.com/planets?limit=10'
+
+# POST with JSON body
+curl -X POST https://api.example.com/planets \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "Mars", "description": "The red planet"}'
+```
+
+<Tip>
+  For end-to-end type safety with the oRPC client, use `RPCHandler` + `RPCLink` instead. Use `OpenAPIHandler` when you need interoperability with non-oRPC clients or generated SDKs.
+</Tip>

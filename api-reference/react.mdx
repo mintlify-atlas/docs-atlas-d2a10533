@@ -1,0 +1,165 @@
+---
+title: "@orpc/react"
+description: Complete API reference for @orpc/react — React Server Actions integration and form utilities.
+---
+
+The `@orpc/react` package provides utilities for integrating oRPC procedures with React Server Actions and HTML form submissions.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/react
+```
+
+```bash pnpm
+pnpm add @orpc/react
+```
+</CodeGroup>
+
+---
+
+## `createFormAction(procedure, options?)`
+
+Wraps an oRPC procedure as a React Server Action that accepts a `FormData` object. The form data is deserialized using bracket notation into the procedure's expected input shape.
+
+```typescript
+import { createFormAction } from '@orpc/react'
+import { createPlanet } from './procedures'
+
+export const createPlanetAction = createFormAction(createPlanet)
+```
+
+Use in a React form:
+
+```tsx
+<form action={createPlanetAction}>
+  <input name="name" />
+  <input name="description" />
+  <button type="submit">Create Planet</button>
+</form>
+```
+
+### Signature
+
+```typescript
+function createFormAction<
+  TInitialContext extends Context,
+  TInputSchema extends AnySchema,
+  TOutputSchema extends AnySchema,
+  TErrorMap extends ErrorMap,
+  TMeta extends Meta,
+>(
+  procedure: Lazyable<Procedure<TInitialContext, any, TInputSchema, TOutputSchema, TErrorMap, TMeta>>,
+  options?: CreateProcedureClientOptions<TInitialContext, TOutputSchema, TErrorMap, TMeta, Record<never, never>>
+): FormAction
+
+type FormAction = (form: FormData) => Promise<void>
+```
+
+<ParamField body="procedure" type="Lazyable<Procedure>" required>
+  The oRPC procedure to wrap. Can be a direct procedure or a lazy reference.
+</ParamField>
+
+<ParamField body="options" type="CreateProcedureClientOptions">
+  Options forwarded to the internal procedure client, such as `context`, `interceptors`, etc.
+</ParamField>
+
+---
+
+## Next.js error handling
+
+`createFormAction` includes built-in Next.js error handling. When an `ORPCError` with status `401`, `403`, or `404` is thrown, it is rethrown with a `digest` property that Next.js uses to display the correct HTTP error page.
+
+```typescript
+// errors.tsx (Next.js error boundary)
+'use client'
+
+export default function Error({ error }: { error: Error }) {
+  return <div>Error: {error.message}</div>
+}
+```
+
+<Note>
+  The Next.js digest behavior is handled automatically by the `orpcErrorToNextHttpFallbackInterceptor` that `createFormAction` applies internally. You do not need to configure this manually.
+</Note>
+
+---
+
+## `FormAction` type
+
+```typescript
+interface FormAction {
+  (form: FormData): Promise<void>
+}
+```
+
+The returned function accepts a `FormData` object, deserializes it using bracket notation, and calls the underlying procedure. It's compatible with the HTML `<form action={...}>` attribute in React.
+
+---
+
+## Bracket notation deserialization
+
+Form data fields are deserialized from bracket notation into nested objects:
+
+```
+name=Earth
+description=Our home planet
+tags[0]=rocky
+tags[1]=habitable
+```
+
+Becomes:
+
+```json
+{
+  "name": "Earth",
+  "description": "Our home planet",
+  "tags": ["rocky", "habitable"]
+}
+```
+
+This uses the `StandardBracketNotationSerializer` from `@orpc/openapi-client`.
+
+---
+
+## Server Actions with context
+
+When your procedure requires server-side context (e.g. authentication), pass it via `options`:
+
+```typescript
+import { createFormAction } from '@orpc/react'
+import { createPlanet } from './procedures'
+import { getServerSession } from './auth'
+
+export const createPlanetAction = createFormAction(createPlanet, {
+  context: async () => ({
+    user: await getServerSession(),
+  }),
+})
+```
+
+---
+
+## `parseFormData(formData)`
+
+Parse `FormData` into a plain object using bracket notation. Re-exported from `@orpc/openapi-client`.
+
+```typescript
+import { parseFormData } from '@orpc/react'
+
+const input = parseFormData(formData)
+// => { name: 'Earth', tags: ['rocky'] }
+```
+
+---
+
+## `getIssueMessage(issue)`
+
+Extracts the human-readable message from a validation issue. Re-exported from `@orpc/openapi-client`.
+
+```typescript
+import { getIssueMessage } from '@orpc/react'
+
+const message = getIssueMessage(validationIssue)
+```

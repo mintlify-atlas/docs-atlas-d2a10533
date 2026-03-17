@@ -1,0 +1,131 @@
+---
+title: "Context"
+description: "Context is request-scoped data that flows through the middleware chain and into your procedure handlers."
+---
+
+**Context** is a plain object that carries per-request data — the authenticated user, request headers, a database connection, a tracing span, and anything else your handlers need. It flows from the server handler through every middleware and into the final handler.
+
+## Context type
+
+In oRPC, `Context` is defined as:
+
+```typescript
+export type Context = Record<PropertyKey, any>
+```
+
+It is a plain record — no classes, no special base types.
+
+## Initial context
+
+The **initial context** is the data you inject when the server receives a request. You provide it in the handler's third argument:
+
+```typescript
+import { createServer } from 'node:http'
+import { RPCHandler } from '@orpc/server/node'
+
+const handler = new RPCHandler(router)
+
+const server = createServer(async (req, res) => {
+  const result = await handler.handle(req, res, {
+    context: { headers: req.headers } // initial context
+  })
+
+  if (!result.matched) {
+    res.statusCode = 404
+    res.end('No procedure matched')
+  }
+})
+```
+
+## Declaring the context type
+
+Tell oRPC what shape your initial context has by calling `.$context<T>()` on the `os` builder. This sets up the type constraint for all downstream middleware and handlers:
+
+```typescript
+import type { IncomingHttpHeaders } from 'node:http'
+import { os } from '@orpc/server'
+
+// All procedures built from this builder expect { headers } in context
+const authedOs = os.$context<{ headers: IncomingHttpHeaders }>()
+
+export const createPlanet = authedOs
+  .handler(async ({ context }) => {
+    // context.headers is typed as IncomingHttpHeaders
+    return { id: 1, name: 'Earth' }
+  })
+```
+
+<Note>
+  `.$context<T>()` resets any previously attached middleware. Call it before chaining `.use()` to set a fresh base context type.
+</Note>
+
+## Enriching context in middleware
+
+Middleware can add new fields to the context by passing them through `next()`:
+
+```typescript
+import { os, ORPCError } from '@orpc/server'
+import type { IncomingHttpHeaders } from 'node:http'
+
+const authMiddleware = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .middleware(async ({ context, next }) => {
+    const user = parseJWT(context.headers.authorization?.split(' ')[1])
+
+    if (user) {
+      // Merge { user } into the context for downstream middleware and the handler
+      return next({ context: { user } })
+    }
+
+    throw new ORPCError('UNAUTHORIZED')
+  })
+```
+
+After this middleware runs, the current context type becomes `{ headers: IncomingHttpHeaders } & { user: User }`. TypeScript tracks this precisely — you never need to cast.
+
+## Context merging
+
+When multiple middleware in a chain each call `next({ context: { ... } })`, oRPC merges all the provided context objects. Later values override earlier ones for duplicate keys:
+
+```typescript
+// Initial context: { headers }
+// After authMiddleware: { headers, user }
+// After tenantMiddleware: { headers, user, tenant }
+
+export const myProcedure = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .use(authMiddleware)   // adds { user }
+  .use(tenantMiddleware) // adds { tenant }
+  .handler(async ({ context }) => {
+    // context: { headers, user, tenant } — all typed
+    return context.tenant.name
+  })
+```
+
+## Sharing an `os` instance
+
+A common pattern is to create a single pre-configured `os` instance with your context type and share it across your codebase:
+
+```typescript router-base.ts
+import type { IncomingHttpHeaders } from 'node:http'
+import { os } from '@orpc/server'
+
+// Shared base — all procedures expect { headers } in context
+export const base = os.$context<{ headers: IncomingHttpHeaders }>()
+```
+
+```typescript planet.ts
+import { base } from './router-base'
+import * as z from 'zod'
+
+export const listPlanet = base
+  .input(z.object({ limit: z.number().optional() }))
+  .handler(async ({ context }) => {
+    // context.headers is available and typed
+    return []
+  })
+```
+
+<Tip>
+  Keep your initial context minimal — only include data that every procedure might need. Add richer data (user objects, database clients) in middleware where they are actually required.
+</Tip>

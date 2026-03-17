@@ -1,0 +1,187 @@
+---
+title: 'Vue Colada'
+description: 'Integrate oRPC with Pinia Colada using @orpc/vue-colada.'
+---
+
+`@orpc/vue-colada` provides utilities for [Pinia Colada](https://pinia-colada.esm.dev/) — the official data-fetching layer for Pinia in Vue. It generates fully typed `useQuery` and `useMutation` options from your oRPC client.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @orpc/vue-colada @pinia/colada pinia
+```
+
+```bash yarn
+yarn add @orpc/vue-colada @pinia/colada pinia
+```
+
+```bash pnpm
+pnpm add @orpc/vue-colada @pinia/colada pinia
+```
+
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Install Pinia and Pinia Colada">
+
+```typescript
+import { PiniaColada } from '@pinia/colada'
+import { createPinia } from 'pinia'
+import { createApp } from 'vue'
+import App from './App.vue'
+
+const app = createApp(App)
+app.use(createPinia())
+app.use(PiniaColada)
+app.mount('#app')
+```
+
+  </Step>
+  <Step title="Create your oRPC client">
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+const link = new RPCLink({ url: '/rpc' })
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+  </Step>
+  <Step title="Create Vue Colada utils">
+
+```typescript
+import { createORPCVueColadaUtils } from '@orpc/vue-colada'
+import { orpc } from './client'
+
+export const orpcUtils = createORPCVueColadaUtils(orpc)
+```
+
+  </Step>
+</Steps>
+
+## useQuery
+
+```vue
+<script setup lang="ts">
+import { useQuery } from '@pinia/colada'
+import { orpcUtils } from './orpc'
+
+const { data, isLoading, error } = useQuery(
+  orpcUtils.planet.list.queryOptions({ input: { limit: 10 } }),
+)
+</script>
+
+<template>
+  <div v-if="isLoading">Loading...</div>
+  <div v-else-if="error">{{ error.message }}</div>
+  <ul v-else>
+    <li v-for="planet in data" :key="planet.id">{{ planet.name }}</li>
+  </ul>
+</template>
+```
+
+### Reactive inputs
+
+Inputs and context accept `MaybeRefOrGetter` — you can pass a `ref` or a getter function and the query will re-run when the value changes:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useQuery } from '@pinia/colada'
+import { orpcUtils } from './orpc'
+
+const limit = ref(10)
+
+const { data } = useQuery(
+  orpcUtils.planet.list.queryOptions({ input: limit }),
+)
+</script>
+```
+
+## useMutation
+
+```vue
+<script setup lang="ts">
+import { useMutation, useQueryCache } from '@pinia/colada'
+import { orpcUtils } from './orpc'
+
+const queryCache = useQueryCache()
+
+const { mutate, isLoading } = useMutation(
+  orpcUtils.planet.create.mutationOptions({
+    onSettled: async () => {
+      await queryCache.invalidateQueries({
+        key: orpcUtils.planet.list.key(),
+      })
+    },
+  }),
+)
+</script>
+
+<template>
+  <button :disabled="isLoading" @click="mutate({ name: 'Mars' })">
+    Create planet
+  </button>
+</template>
+```
+
+## Cache invalidation with key()
+
+`key()` generates a Pinia Colada `EntryKey` for use with cache operations:
+
+```typescript
+import { useQueryCache } from '@pinia/colada'
+import { orpcUtils } from './orpc'
+
+const queryCache = useQueryCache()
+
+// Invalidate all planet.list queries
+await queryCache.invalidateQueries({ key: orpcUtils.planet.list.key() })
+
+// Invalidate with a specific input
+await queryCache.invalidateQueries({
+  key: orpcUtils.planet.list.key({ type: 'query', input: { limit: 10 } }),
+})
+
+// Invalidate all planet queries
+await queryCache.invalidateQueries({ key: orpcUtils.planet.key() })
+```
+
+## Calling the procedure directly
+
+Each procedure utils also exposes `call` — the raw client function:
+
+```typescript
+const planets = await orpcUtils.planet.list.call({ limit: 10 })
+```
+
+## queryOptions and mutationOptions structure
+
+Under the hood, `queryOptions()` returns a Pinia Colada `UseQueryOptions` object with `key` and `query` pre-populated:
+
+```typescript
+// What queryOptions() returns (simplified)
+{
+  key: computed(() => buildKey(path, { type: 'query', input: toValue(input) })),
+  query: ({ signal }) => client(toValue(input), { signal, context: toValue(context) }),
+  // ...any extra options you pass
+}
+```
+
+And `mutationOptions()` returns a `UseMutationOptions` object:
+
+```typescript
+// What mutationOptions() returns (simplified)
+{
+  key: input => buildKey(path, { type: 'mutation', input }),
+  mutation: input => client(input, { context: toValue(context) }),
+  // ...any extra options you pass
+}
+```

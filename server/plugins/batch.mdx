@@ -1,0 +1,66 @@
+---
+title: Batch Plugin
+description: Combine multiple RPC requests into a single HTTP call with the BatchHandlerPlugin.
+---
+
+The `BatchHandlerPlugin` allows clients to send multiple oRPC calls in a single HTTP request. This reduces latency for operations that would otherwise require multiple round trips.
+
+## Usage
+
+```ts
+import { RPCHandler } from '@orpc/server/node'
+import { BatchHandlerPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [
+    new BatchHandlerPlugin({
+      maxSize: 20, // allow up to 20 requests per batch
+    }),
+  ],
+})
+```
+
+## How it works
+
+1. The client sends a single HTTP request with the `x-orpc-batch` header set to `buffered` or `streaming`.
+2. The server parses the batch, executes each sub-request concurrently, and returns all responses in a single HTTP response body.
+3. Sub-requests that use streaming (SSE) or file uploads are rejected within the batch — call those procedures separately.
+
+## Options
+
+<ParamField body="maxSize" type="number | ((options) => Promisable<number>)" default="10">
+  Maximum number of requests per batch. If exceeded, the server returns HTTP 413. Can be a static number or an async function for dynamic limits.
+</ParamField>
+
+<ParamField body="mapRequestItem" type="(request, batchOptions) => StandardRequest">
+  Transform each sub-request before processing. By default, batch-level headers are merged into each sub-request so auth headers propagate automatically.
+</ParamField>
+
+<ParamField body="successStatus" type="number | Function" default="207">
+  HTTP status code for a successful batch response.
+</ParamField>
+
+<ParamField body="headers" type="StandardHeaders | Function" default="{}">
+  Additional headers to include in the batch response.
+</ParamField>
+
+## Limitations
+
+<Warning>
+  Batch requests do not support procedures that return file/blob responses or event iterators (SSE). Those procedures must be called individually.
+</Warning>
+
+## Client-side batching
+
+On the client, enable batching by configuring the `RPCLink`:
+
+```ts
+import { RPCLink } from '@orpc/client/fetch'
+import { BatchLinkPlugin } from '@orpc/client/plugins'
+
+const link = new RPCLink({
+  url: 'http://localhost:3000',
+  plugins: [new BatchLinkPlugin()],
+})
+```

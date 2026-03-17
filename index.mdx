@@ -1,97 +1,65 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "oRPC — Typesafe APIs Made Simple"
+description: "Build end-to-end type-safe APIs with first-class OpenAPI support, contract-first development, and seamless framework integrations."
 ---
 
-## Setting up
+## Welcome to oRPC
 
-Get your documentation site up and running in minutes.
+**oRPC is a powerful combination of RPC and OpenAPI**, making it easy to build APIs that are end-to-end type-safe and adhere to OpenAPI standards. Define your procedures once in TypeScript and get fully typed clients, automatic OpenAPI spec generation, and seamless framework integrations — with no code generation required.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get a working oRPC API up and running in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Why oRPC?" icon="question" href="/why-orpc">
+    How oRPC compares to tRPC, ts-rest, and similar tools.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Core Concepts" icon="book" href="/concepts/procedures">
+    Understand procedures, routers, middleware, and context.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api-reference/server">
+    Explore the complete API surface.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Key features
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="End-to-End Type Safety" icon="shield-check">
+    Type-safe inputs, outputs, and errors from client to server with zero code generation.
+  </Card>
+  <Card title="First-Class OpenAPI" icon="file-code">
+    Built-in OpenAPI spec generation that fully adheres to the standard.
+  </Card>
+  <Card title="Contract-First Development" icon="file-contract">
+    Define your API contract before implementation, then share it with clients.
+  </Card>
+  <Card title="Standard Schema Support" icon="check-circle">
+    Works out of the box with Zod, Valibot, ArkType, and any Standard Schema library.
+  </Card>
+  <Card title="Framework Integrations" icon="plug">
+    TanStack Query, SWR, Pinia Colada, and more for seamless data fetching.
+  </Card>
+  <Card title="Server Actions" icon="bolt">
+    Compatible with React Server Actions on Next.js, TanStack Start, and others.
+  </Card>
+  <Card title="Streaming & SSE" icon="signal-stream">
+    Full type-safe support for Server-Sent Events and streaming responses.
+  </Card>
+  <Card title="Multi-Runtime Support" icon="server">
+    Works on Cloudflare Workers, Deno, Bun, Node.js, and beyond.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Packages
 
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+| Package | Description |
+|---------|-------------|
+| `@orpc/server` | Build your API — procedures, routers, middleware |
+| `@orpc/contract` | Define your API contract for contract-first development |
+| `@orpc/client` | Consume your API with full type safety |
+| `@orpc/openapi` | Generate OpenAPI specs and serve OpenAPI-compatible handlers |
+| `@orpc/tanstack-query` | TanStack Query integration (React, Vue, Solid, Svelte) |
+| `@orpc/react` | React utilities and Server Actions support |
+| `@orpc/otel` | OpenTelemetry instrumentation |
+| `@orpc/nest` | Deep NestJS integration |

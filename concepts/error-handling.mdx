@@ -1,0 +1,164 @@
+---
+title: "Error handling"
+description: "oRPC provides typed errors, error maps, and a safe() helper so you can handle failures with the same type safety as your procedure outputs."
+---
+
+oRPC has first-class support for typed errors. You can declare the errors a procedure may throw, receive them as typed objects on the client, and use the `safe()` helper to handle them without try/catch boilerplate.
+
+## ORPCError
+
+`ORPCError` is the error class used throughout oRPC. It extends `Error` and carries a `code`, HTTP `status`, and optional typed `data`:
+
+```typescript
+import { ORPCError } from '@orpc/server'
+
+// Built-in codes map to standard HTTP status codes
+throw new ORPCError('UNAUTHORIZED')         // 401
+throw new ORPCError('NOT_FOUND')            // 404
+throw new ORPCError('INTERNAL_SERVER_ERROR') // 500
+
+// Custom message
+throw new ORPCError('FORBIDDEN', { message: 'Subscription required' })
+```
+
+Built-in codes include: `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `UNPROCESSABLE_CONTENT`, `TOO_MANY_REQUESTS`, `INTERNAL_SERVER_ERROR`, and more.
+
+## Typed error maps with `.errors()`
+
+Declare the errors a procedure can throw using `.errors()`. This makes the errors visible to clients and enables type-safe throwing:
+
+```typescript
+import { os, ORPCError } from '@orpc/server'
+import * as z from 'zod'
+
+export const createPlanet = os
+  .errors({
+    PLANET_LIMIT_REACHED: {
+      status: 429,
+      message: 'Planet limit reached',
+      data: z.object({
+        limit: z.number(),
+        current: z.number(),
+      }),
+    },
+  })
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input, errors }) => {
+    const count = await getPlanetCount()
+    const limit = 100
+
+    if (count >= limit) {
+      // errors.PLANET_LIMIT_REACHED is a typed constructor
+      throw errors.PLANET_LIMIT_REACHED({
+        data: { limit, current: count },
+      })
+    }
+
+    return { id: 1, name: input.name }
+  })
+```
+
+<Note>
+  Errors declared in `.errors()` are called **defined errors** — they have `defined: true` on the `ORPCError` instance. Undefined errors (generic throws) have `defined: false`.
+</Note>
+
+## Sharing errors across a router
+
+You can attach an error map to the `os` builder so every procedure inherits the same errors:
+
+```typescript
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+const base = os.errors({
+  UNAUTHORIZED: {
+    status: 401,
+    message: 'Unauthorized',
+  },
+  FORBIDDEN: {
+    status: 403,
+    message: 'Forbidden',
+  },
+})
+
+export const listPlanet = base.handler(async ({ errors }) => {
+  // errors.UNAUTHORIZED and errors.FORBIDDEN are available here
+  return []
+})
+```
+
+## The `safe()` helper
+
+`safe()` wraps a procedure call and returns a tuple/object instead of throwing. It supports both tuple destructuring and object destructuring:
+
+```typescript
+import { safe } from '@orpc/server'
+import { orpc } from './client'
+
+// Tuple style
+const [error, data, isDefined] = await safe(orpc.planet.create({ name: 'Earth' }))
+
+// Object style
+const { error, data, isDefined, isSuccess } = await safe(
+  orpc.planet.create({ name: 'Earth' })
+)
+
+if (error) {
+  if (isDefined) {
+    // error is a typed ORPCError defined in the procedure's error map
+    console.log(error.code)   // e.g. 'PLANET_LIMIT_REACHED'
+    console.log(error.data)   // typed according to the error's data schema
+  } else {
+    // Unexpected error (network failure, unhandled exception, etc.)
+    console.error(error)
+  }
+} else {
+  console.log(data) // typed procedure output
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `error` | `ORPCError \| null` | The error, or `null` on success |
+| `data` | `TOutput \| undefined` | The output, or `undefined` on failure |
+| `isDefined` | `boolean` | `true` if the error is a declared typed error |
+| `isSuccess` | `boolean` | `true` if the call succeeded |
+
+## Re-throwing errors
+
+If you catch an error in middleware and want to re-throw it with a different type, construct a new `ORPCError`:
+
+```typescript
+os.middleware(async ({ next }) => {
+  try {
+    return await next()
+  } catch (error) {
+    if (error instanceof ORPCError && error.code === 'NOT_FOUND') {
+      throw new ORPCError('FORBIDDEN', { cause: error })
+    }
+    throw error
+  }
+})
+```
+
+## Using `isDefinedError`
+
+The `isDefinedError` type guard narrows an unknown error to a typed `ORPCError`:
+
+```typescript
+import { isDefinedError } from '@orpc/server'
+
+try {
+  await orpc.planet.create({ name: 'Earth' })
+} catch (error) {
+  if (isDefinedError(error)) {
+    // error is narrowed to the declared error union
+    console.log(error.code)
+    console.log(error.data)
+  }
+}
+```
+
+<Tip>
+  Prefer `safe()` over try/catch in client code — it gives you typed errors without exception handling syntax, and works well with `async`/`await` flows.
+</Tip>

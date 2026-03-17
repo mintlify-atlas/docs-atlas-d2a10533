@@ -1,122 +1,173 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "oRPC",
+  "theme": "sequoia",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#141c1c",
+    "light": "#cba8f4",
+    "dark": "#9177b1"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/8027ad86-8b62-409f-bc4d-f2487a39ce43.svg",
+  "logo": {
+    "light": "https://media.brand.dev/6ea8f6cb-ff36-4247-8991-a737f57c9cac.webp",
+    "dark": "https://media.brand.dev/6ea8f6cb-ff36-4247-8991-a737f57c9cac.webp"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/middleapi/orpc"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/middleapi/orpc"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Getting Started",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Introduction",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "why-orpc"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
-            ]
-          },
-          {
-            "group": "Writing content",
-            "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "concepts/procedures",
+              "concepts/routers",
+              "concepts/middleware",
+              "concepts/context",
+              "concepts/error-handling",
+              "concepts/lazy-router"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Server",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Building Your API",
             "pages": [
-              "api-reference/introduction"
+              "server/overview",
+              "server/procedures",
+              "server/routers",
+              "server/middleware",
+              "server/context",
+              "server/errors"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Contract-First",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "server/contract/overview",
+              "server/contract/defining",
+              "server/contract/implementing"
+            ]
+          },
+          {
+            "group": "Adapters",
+            "pages": [
+              "server/adapters/fetch",
+              "server/adapters/node",
+              "server/adapters/fastify",
+              "server/adapters/aws-lambda",
+              "server/adapters/cloudflare"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "server/plugins/cors",
+              "server/plugins/batch",
+              "server/plugins/csrf-protection",
+              "server/plugins/response-headers"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "server/server-actions",
+              "server/streaming-sse",
+              "server/websockets",
+              "server/opentelemetry",
+              "server/nestjs"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Client",
+        "groups": [
+          {
+            "group": "Client Setup",
+            "pages": [
+              "client/overview",
+              "client/rpc-client",
+              "client/links",
+              "client/error-handling"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "client/tanstack-query",
+              "client/react-query",
+              "client/vue-query",
+              "client/solid-query",
+              "client/svelte-query",
+              "client/swr",
+              "client/vue-colada"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "OpenAPI",
+        "groups": [
+          {
+            "group": "OpenAPI",
+            "pages": [
+              "openapi/overview",
+              "openapi/generating-spec",
+              "openapi/serving-ui",
+              "openapi/schema-converters",
+              "openapi/customization"
+            ]
+          },
+          {
+            "group": "Schema Validators",
+            "pages": [
+              "openapi/schemas/zod",
+              "openapi/schemas/valibot",
+              "openapi/schemas/arktype"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Packages",
+            "pages": [
+              "api-reference/server",
+              "api-reference/client",
+              "api-reference/contract",
+              "api-reference/openapi",
+              "api-reference/tanstack-query",
+              "api-reference/react",
+              "api-reference/otel"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

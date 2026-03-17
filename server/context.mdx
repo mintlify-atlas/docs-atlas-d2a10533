@@ -1,0 +1,124 @@
+---
+title: Context
+description: Pass request-scoped data through the oRPC call stack using typed context.
+---
+
+**Context** is a typed object that flows through every layer of an oRPC call — from the initial HTTP handler, through middleware, to the procedure handler. It is the primary way to share data like the current user, database connection, or request headers.
+
+## Two kinds of context
+
+| Kind              | Description                                                          |
+|-------------------|----------------------------------------------------------------------|
+| **Initial context** | The object you pass when calling `handler.handle()`. Typically set per-request by the HTTP adapter. |
+| **Current context** | The initial context enriched by middleware. Each middleware can extend it with new properties. |
+
+## Declaring the initial context
+
+Use `.$context<T>()` on the builder to declare what the initial context looks like. This ensures TypeScript enforces that handlers pass the right context:
+
+```ts
+import { os } from '@orpc/server'
+
+// Declare the shape of the initial context
+const base = os.$context<{
+  headers: Record<string, string | undefined>
+}>()
+
+// All procedures derived from `base` require this initial context
+const procedure = base
+  .handler(async ({ context }) => {
+    // context.headers is available
+    return context.headers['user-agent']
+  })
+```
+
+## Passing initial context to the handler
+
+Context is provided when you call `handler.handle()` in your HTTP adapter:
+
+```ts
+import { createServer } from 'node:http'
+import { RPCHandler } from '@orpc/server/node'
+
+const handler = new RPCHandler(router)
+
+const server = createServer(async (req, res) => {
+  await handler.handle(req, res, {
+    context: { headers: req.headers }, // <-- initial context
+  })
+})
+```
+
+## Enriching context in middleware
+
+Middleware can add new properties by passing a partial context object to `next()`:
+
+```ts
+import { ORPCError, os } from '@orpc/server'
+
+const base = os.$context<{ headers: Record<string, string | undefined> }>()
+
+const authMiddleware = base.middleware(async ({ context, next }) => {
+  const token = context.headers.authorization?.split(' ')[1]
+  const user = token ? await verifyToken(token) : null
+
+  if (!user) throw new ORPCError('UNAUTHORIZED')
+
+  return next({
+    context: { user }, // merges { user } into the current context
+  })
+})
+
+// Procedures that use authMiddleware have `context.user` available
+const protectedProcedure = base
+  .use(authMiddleware)
+  .handler(async ({ context }) => {
+    return context.user // fully typed
+  })
+```
+
+## Sharing a base builder
+
+The recommended pattern is to export a single base `os` instance configured for your application, then derive all procedures from it:
+
+```ts
+// lib/orpc.ts
+import { os } from '@orpc/server'
+
+export type Context = {
+  headers: Record<string, string | undefined>
+}
+
+// The shared base builder — all procedures must receive `Context`
+export const pub = os.$context<Context>()
+
+// Authenticated variant — adds `user` to the context
+export const authed = pub.use(async ({ context, next }) => {
+  const user = await getUserFromHeaders(context.headers)
+  if (!user) throw new ORPCError('UNAUTHORIZED')
+  return next({ context: { user } })
+})
+```
+
+```ts
+// procedures/planet.ts
+import { authed, pub } from '../lib/orpc'
+
+export const listPlanets = pub
+  .handler(async () => [{ id: 1, name: 'Earth' }])
+
+export const createPlanet = authed
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input, context }) => {
+    // context.user is available
+    return { id: 2, name: input.name, createdBy: context.user.id }
+  })
+```
+
+## Type inference
+
+oRPC tracks both `TInitialContext` and `TCurrentContext` as separate generic parameters on the builder. This ensures:
+
+- TypeScript knows exactly which properties the HTTP adapter must supply.
+- TypeScript knows exactly which properties are available inside handlers.
+- Middleware can narrow or widen context in a type-safe way.

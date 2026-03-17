@@ -1,0 +1,88 @@
+---
+title: OpenTelemetry
+description: Instrument oRPC with distributed tracing using @orpc/otel and the OpenTelemetry SDK.
+---
+
+`@orpc/otel` integrates oRPC with [OpenTelemetry](https://opentelemetry.io/) for distributed tracing. Every procedure call automatically creates a span, so you can trace requests across services.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/otel @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node
+```
+```bash pnpm
+pnpm add @orpc/otel @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node
+```
+</CodeGroup>
+
+## Setup
+
+Register the `ORPCInstrumentation` alongside the standard OpenTelemetry SDK setup. This **must** be done before importing your application code:
+
+```ts
+// instrumentation.ts (loaded before anything else)
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node'
+import { ORPCInstrumentation } from '@orpc/otel'
+
+const sdk = new NodeSDK({
+  instrumentations: [
+    getNodeAutoInstrumentations(),
+    new ORPCInstrumentation(),
+  ],
+})
+
+sdk.start()
+```
+
+With Next.js, place this in `instrumentation.ts` at the project root and it will be loaded automatically.
+
+## What gets traced
+
+Once `ORPCInstrumentation` is registered, oRPC automatically:
+
+- Creates a **span** for every procedure call.
+- Propagates W3C `traceparent` context from incoming HTTP headers.
+- Records error information on spans when procedures throw.
+- Adds batch-level spans when using the `BatchHandlerPlugin`.
+
+## `ORPCInstrumentation` API
+
+```ts
+import { ORPCInstrumentation } from '@orpc/otel'
+
+const instrumentation = new ORPCInstrumentation({
+  // Standard OpenTelemetry InstrumentationConfig options
+  enabled: true,
+})
+
+// Enable / disable at runtime
+instrumentation.enable()
+instrumentation.disable()
+```
+
+When enabled, `ORPCInstrumentation` calls `setGlobalOtelConfig()` internally, configuring oRPC's shared tracing to use the active `TracerProvider`, `ContextManager`, and `Propagator` from the OpenTelemetry API.
+
+## Exporting traces
+
+Combine with any OpenTelemetry exporter:
+
+```ts
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
+import { ORPCInstrumentation } from '@orpc/otel'
+
+const sdk = new NodeSDK({
+  traceExporter: new OTLPTraceExporter({
+    url: 'http://localhost:4318/v1/traces',
+  }),
+  instrumentations: [new ORPCInstrumentation()],
+})
+
+sdk.start()
+```
+
+<Tip>
+  The oRPC instrumentation works with any OpenTelemetry-compatible backend: Jaeger, Zipkin, Honeycomb, Datadog, and more.
+</Tip>

@@ -1,0 +1,132 @@
+---
+title: "Routers"
+description: "A router is a plain object that groups procedures into a type-safe hierarchy. It is the entry point for your server and client."
+---
+
+A **router** is a plain JavaScript object where the values are procedures or nested routers. oRPC traverses this object to route incoming requests to the correct procedure.
+
+## Defining a router
+
+You can define a router by composing procedures into an object:
+
+```typescript
+import { listPlanet, findPlanet, createPlanet } from './procedures'
+
+export const router = {
+  planet: {
+    list: listPlanet,
+    find: findPlanet,
+    create: createPlanet,
+  },
+}
+```
+
+The nesting depth is unlimited. A procedure is also a valid router — it can be used directly as the root.
+
+## Using `os.router()`
+
+The `os.router()` method lets you apply shared options (middleware, error maps, prefix, tags) to an entire router:
+
+```typescript
+import { os } from '@orpc/server'
+
+export const planetRouter = os
+  .use(authMiddleware) // applied to every procedure in this router
+  .router({
+    list: listPlanet,
+    find: findPlanet,
+    create: createPlanet,
+  })
+```
+
+<Note>
+  `os.router()` returns a new router with the middleware and options merged into every procedure. The original procedures are not mutated.
+</Note>
+
+## Nested routers
+
+Combine multiple routers to build your full API:
+
+```typescript
+import { os } from '@orpc/server'
+
+const planetRouter = {
+  list: listPlanet,
+  find: findPlanet,
+  create: createPlanet,
+}
+
+const starRouter = {
+  list: listStar,
+  find: findStar,
+}
+
+export const router = {
+  planet: planetRouter,
+  star: starRouter,
+}
+```
+
+## Prefixing routes
+
+When serving an OpenAPI spec, you can add a URL prefix to all procedures in a router:
+
+```typescript
+export const planetRouter = os
+  .prefix('/planets')
+  .router({
+    list: listPlanet,
+    find: findPlanet,
+    create: createPlanet,
+  })
+```
+
+<Note>
+  Prefixes only affect procedures that define an explicit `route` with a path. They are ignored for procedures served via the default RPC path convention.
+</Note>
+
+## Tagging procedures for OpenAPI
+
+Add OpenAPI tags to all procedures in a router at once:
+
+```typescript
+export const planetRouter = os
+  .tag('planets')
+  .router({
+    list: listPlanet,
+    find: findPlanet,
+    create: createPlanet,
+  })
+```
+
+## Router utility types
+
+`@orpc/server` exports several utility types for introspecting your router:
+
+```typescript
+import type {
+  InferRouterInputs,
+  InferRouterOutputs,
+  InferRouterInitialContexts,
+  RouterClient,
+} from '@orpc/server'
+
+// Extract all input/output types
+type Inputs = InferRouterInputs<typeof router>
+type Outputs = InferRouterOutputs<typeof router>
+
+// The client type — used when creating a typed client
+type Client = RouterClient<typeof router>
+```
+
+## Lazy routers
+
+For large routers that impact cold start times, you can wrap sub-routers in `lazy()` to defer loading until first use. See [Lazy Routers](/concepts/lazy-router) for details.
+
+```typescript
+import { lazy } from '@orpc/server'
+
+export const router = {
+  planet: lazy(() => import('./planet-router').then(m => ({ default: m.planetRouter }))),
+}
+```

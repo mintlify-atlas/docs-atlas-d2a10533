@@ -1,0 +1,103 @@
+---
+title: Implementing a Contract
+description: Use implement() from @orpc/server to build a type-checked implementation of a contract router.
+---
+
+Once you have a [contract defined](/server/contract/defining), use the `implement()` function from `@orpc/server` to create a typed implementer that enforces your implementation matches the contract.
+
+## `implement(contract)`
+
+```ts
+import { implement } from '@orpc/server'
+import { contract } from './contract' // your @orpc/contract router
+
+const impl = implement(contract)
+```
+
+The returned `impl` object mirrors the contract structure. For each procedure in the contract, you get a builder that **only exposes the methods that don't change the contract** (no `.input()`, `.output()`, or `.errors()` on leaf procedures — those are fixed by the contract).
+
+## Implementing procedures
+
+```ts
+import { implement } from '@orpc/server'
+import { contract } from './contract'
+
+const impl = implement(contract)
+
+export const router = impl.router({
+  planet: {
+    list: impl.planet.list.handler(async ({ input }) => {
+      // input type is inferred from the contract
+      return [{ id: 1, name: 'Earth' }]
+    }),
+
+    find: impl.planet.find.handler(async ({ input, errors }) => {
+      const planet = await db.findById(input.id)
+      if (!planet) throw errors.NOT_FOUND() // typed from contract
+      return planet
+    }),
+
+    create: impl.planet.create.handler(async ({ input }) => {
+      return { id: 2, name: input.name }
+    }),
+  },
+})
+```
+
+TypeScript will error if:
+- A procedure is missing from the implementation.
+- The handler return type doesn't match the contract output schema.
+- An unknown error code is thrown.
+
+## Setting context
+
+Use `.$context<T>()` on the implementer to declare what the HTTP adapter must provide:
+
+```ts
+const impl = implement(contract).$context<{
+  headers: Record<string, string | undefined>
+}>()
+```
+
+## Adding middleware
+
+The implementer supports `.use()` just like the `os` builder:
+
+```ts
+const authedImpl = implement(contract)
+  .$context<{ headers: Record<string, string | undefined> }>()
+  .use(async ({ context, next }) => {
+    const user = await getUserFromHeaders(context.headers)
+    if (!user) throw new ORPCError('UNAUTHORIZED')
+    return next({ context: { user } })
+  })
+
+export const router = authedImpl.router({
+  planet: {
+    create: authedImpl.planet.create.handler(async ({ input, context }) => {
+      return { id: 2, name: input.name, createdBy: context.user.id }
+    }),
+  },
+})
+```
+
+## Sharing the contract type with clients
+
+The contract type can be used on the client side for full type safety, without importing any server code:
+
+```ts
+// client.ts
+import type { RouterClient } from '@orpc/server'
+import type { contract } from './contract' // only the type, not runtime code
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+
+const link = new RPCLink({ url: 'http://localhost:3000' })
+
+export const orpc: RouterClient<typeof contract> = createORPCClient(link)
+// orpc.planet.list({ limit: 10 }) -- fully typed
+```
+
+<Tip>
+  Publish `@orpc/contract` routes as a separate npm package so frontend teams can import the contract without taking a dependency on backend server code.
+</Tip>

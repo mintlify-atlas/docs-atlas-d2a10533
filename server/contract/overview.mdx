@@ -1,0 +1,98 @@
+---
+title: Contract-First Overview
+description: Define your API shape once, share it across servers and clients, and implement it with full type safety.
+---
+
+**Contract-first development** means you define the complete API surface — inputs, outputs, errors, and HTTP routes — in a separate package before writing any implementation logic.
+
+This pattern is useful when:
+
+- You want to share the API contract as a standalone package (e.g., between frontend and backend monorepos).
+- You are generating SDKs or OpenAPI specs from the contract alone.
+- Multiple teams implement different parts of the same API.
+- You want the client to depend only on the contract, not the full server code.
+
+## The two packages
+
+| Package | Role |
+|---------|------|
+| `@orpc/contract` | Define the API shape (procedures, routers, error maps) without any implementation. |
+| `@orpc/server` | Implement the contract and serve requests. |
+
+The contract package has no runtime dependencies on server frameworks and can be published independently.
+
+## Workflow
+
+<Steps>
+  <Step title="Define the contract">
+    Use the `oc` builder from `@orpc/contract` to declare procedures and routers.
+
+    ```ts
+    // packages/api-contract/src/index.ts
+    import { oc } from '@orpc/contract'
+    import * as z from 'zod'
+
+    export const contract = oc.router({
+      planet: {
+        list: oc
+          .input(z.object({ limit: z.number().optional() }))
+          .output(z.array(z.object({ id: z.number(), name: z.string() }))),
+        find: oc
+          .input(z.object({ id: z.number() }))
+          .output(z.object({ id: z.number(), name: z.string() }))
+          .errors({ NOT_FOUND: { status: 404 } }),
+      },
+    })
+    ```
+  </Step>
+  <Step title="Implement the contract">
+    Use `implement()` from `@orpc/server` to create a type-checked implementation.
+
+    ```ts
+    // packages/server/src/index.ts
+    import { implement } from '@orpc/server'
+    import { contract } from '@api-contract'
+
+    const impl = implement(contract)
+
+    export const router = impl.router({
+      planet: {
+        list: impl.planet.list.handler(async ({ input }) => {
+          return [{ id: 1, name: 'Earth' }]
+        }),
+        find: impl.planet.find.handler(async ({ input, errors }) => {
+          const planet = await db.find(input.id)
+          if (!planet) throw errors.NOT_FOUND()
+          return planet
+        }),
+      },
+    })
+    ```
+  </Step>
+  <Step title="Share with clients">
+    Clients can import the contract type to get full type safety without a server dependency.
+
+    ```ts
+    // apps/frontend/src/client.ts
+    import type { RouterClient } from '@orpc/server'
+    import { createORPCClient } from '@orpc/client'
+    import { RPCLink } from '@orpc/client/fetch'
+    import type { contract } from '@api-contract'
+
+    const link = new RPCLink({ url: 'http://localhost:3000' })
+
+    export const orpc: RouterClient<typeof contract> = createORPCClient(link)
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Defining a contract" href="/server/contract/defining">
+    Learn the full `oc` builder API for procedures and routers.
+  </Card>
+  <Card title="Implementing a contract" href="/server/contract/implementing">
+    Use `implement()` to build a type-safe server from your contract.
+  </Card>
+</CardGroup>

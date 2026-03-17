@@ -1,0 +1,184 @@
+---
+title: Procedures
+description: Define typed, validated RPC procedures with inputs, outputs, errors, and handlers.
+---
+
+A **procedure** is the fundamental building block of an oRPC server. It is a typed, validated function that handles a single operation — similar to an HTTP endpoint, but without HTTP concerns baked in.
+
+## Defining a procedure
+
+Procedures are created by chaining methods on the `os` builder and terminating with `.handler()`.
+
+```ts
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+const greet = os
+  .input(z.object({ name: z.string() }))
+  .output(z.object({ message: z.string() }))
+  .handler(async ({ input }) => {
+    return { message: `Hello, ${input.name}!` }
+  })
+```
+
+## `.input(schema)`
+
+Defines the input validation schema. oRPC supports any Standard Schema-compatible library (Zod, Valibot, ArkType, etc.).
+
+```ts
+import * as z from 'zod'
+
+const procedure = os
+  .input(
+    z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+      cursor: z.number().int().min(0).default(0),
+    }),
+  )
+  .handler(async ({ input }) => {
+    // input.limit is number | undefined
+    // input.cursor is number (defaulted to 0)
+    return []
+  })
+```
+
+<Note>
+  When you call `.input()`, the schema is validated **before** the handler runs. If validation fails, oRPC returns a typed `INPUT_VALIDATION_FAILED` error automatically.
+</Note>
+
+## `.output(schema)`
+
+Defines the output validation schema. The return type of the handler is checked against this schema at runtime.
+
+```ts
+const procedure = os
+  .input(z.object({ id: z.number() }))
+  .output(z.object({ id: z.number(), name: z.string() }))
+  .handler(async ({ input }) => {
+    // Return value is validated against the output schema
+    return { id: input.id, name: 'Earth' }
+  })
+```
+
+## `.handler(fn)`
+
+The terminal method that provides the implementation. The handler receives a single options object:
+
+| Property   | Type                    | Description                                |
+|------------|-------------------------|--------------------------------------------|
+| `input`    | Inferred from schema    | Validated, parsed input                    |
+| `context`  | Current context type    | Context enriched by middleware             |
+| `errors`   | `ORPCErrorConstructorMap` | Typed error constructors                 |
+| `meta`     | Meta type               | Procedure metadata                         |
+| `path`     | `string[]`              | The path segments of this procedure        |
+| `procedure`| `Procedure`             | The procedure object itself                |
+| `signal`   | `AbortSignal \| undefined` | AbortSignal for cancellation            |
+
+```ts
+const procedure = os
+  .input(z.object({ id: z.number() }))
+  .errors({ NOT_FOUND: { status: 404 } })
+  .handler(async ({ input, context, errors }) => {
+    const item = await db.find(input.id)
+    if (!item) throw errors.NOT_FOUND()
+    return item
+  })
+```
+
+## `.errors(map)`
+
+Registers typed, structured errors that the procedure can throw. This information flows to the client as typed errors and is included in the OpenAPI spec.
+
+```ts
+const procedure = os
+  .errors({
+    NOT_FOUND: {
+      status: 404,
+      message: 'Resource not found',
+    },
+    FORBIDDEN: {
+      status: 403,
+      data: z.object({ requiredRole: z.string() }),
+    },
+  })
+  .handler(async ({ errors }) => {
+    throw errors.FORBIDDEN({ data: { requiredRole: 'admin' } })
+  })
+```
+
+## `.meta(object)`
+
+Attaches arbitrary metadata to the procedure. Metadata is available in middleware and can be used for authorization, rate-limiting labels, or OpenAPI tags.
+
+```ts
+const procedure = os
+  .$meta<{ authRequired: boolean }>({})
+  .meta({ authRequired: true })
+  .handler(async () => 'ok')
+```
+
+The `$meta<T>()` call on the builder sets the meta shape for the entire builder tree.
+
+## `.route(options)`
+
+Attaches HTTP routing information used by OpenAPI and adapters. Without a `.route()` call, the procedure is addressable via its router path.
+
+```ts
+const procedure = os
+  .route({
+    method: 'GET',
+    path: '/planets/{id}',
+    summary: 'Get a planet',
+    description: 'Fetch a single planet by its ID.',
+    tags: ['planets'],
+    successStatus: 200,
+  })
+  .input(z.object({ id: z.number() }))
+  .handler(async ({ input }) => ({ id: input.id, name: 'Mars' }))
+```
+
+## `.use(middleware)`
+
+Procedures can have middleware attached directly. See the [Middleware](/server/middleware) page for full details.
+
+```ts
+const procedure = os
+  .use(authMiddleware)
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input, context }) => {
+    // context.user is set by authMiddleware
+    return { created: true }
+  })
+```
+
+## Chaining order
+
+The order of `.input()`, `.output()`, `.errors()`, `.meta()`, and `.route()` does not affect runtime behavior — they can appear in any order before `.handler()`. However, `.use()` calls **are** order-sensitive because they define the middleware execution order.
+
+## `DecoratedProcedure` extras
+
+After calling `.handler()`, you get back a `DecoratedProcedure` which has two additional capabilities:
+
+### `.callable()`
+
+Makes the procedure directly callable like a function (useful for server-side calls):
+
+```ts
+const greet = os
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input }) => `Hello, ${input.name}!`)
+  .callable()
+
+const result = await greet({ name: 'World' })
+```
+
+### `.actionable()`
+
+Wraps the procedure as a Next.js-compatible Server Action. See [Server Actions](/server/server-actions) for more.
+
+```ts
+const action = os
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input }) => `Hello, ${input.name}!`)
+  .actionable()
+```

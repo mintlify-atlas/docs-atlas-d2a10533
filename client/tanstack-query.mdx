@@ -1,0 +1,205 @@
+---
+title: 'TanStack Query'
+description: 'Use @orpc/tanstack-query to integrate oRPC with TanStack Query across React, Vue, Solid, Svelte, and Angular.'
+---
+
+`@orpc/tanstack-query` provides framework-agnostic utilities that generate fully typed TanStack Query options from your oRPC client. Framework-specific packages (`@orpc/react-query`, `@orpc/vue-query`, etc.) re-export these utilities with framework-appropriate types.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @orpc/tanstack-query @tanstack/query-core
+```
+
+```bash yarn
+yarn add @orpc/tanstack-query @tanstack/query-core
+```
+
+```bash pnpm
+pnpm add @orpc/tanstack-query @tanstack/query-core
+```
+
+</CodeGroup>
+
+<Tip>
+For React, Vue, Solid, or Svelte, install the framework-specific package instead — it re-exports everything from `@orpc/tanstack-query` with the correct framework types. See the sidebar for the relevant page.
+</Tip>
+
+## Setup
+
+<Steps>
+  <Step title="Create your oRPC client">
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { RouterClient } from '@orpc/server'
+import type { router } from './server'
+
+const link = new RPCLink({ url: 'http://localhost:3000/rpc' })
+export const orpc: RouterClient<typeof router> = createORPCClient(link)
+```
+
+  </Step>
+  <Step title="Create router utils">
+
+```typescript
+import { createRouterUtils } from '@orpc/tanstack-query'
+import { orpc } from './client'
+
+export const orpcUtils = createRouterUtils(orpc)
+```
+
+  </Step>
+</Steps>
+
+`createRouterUtils` (also exported as `createTanstackQueryUtils`) returns a proxy that mirrors your router's shape. At each procedure you get `queryOptions`, `infiniteOptions`, `mutationOptions`, `queryKey`, `infiniteKey`, `mutationKey`, and `call`.
+
+## Query options
+
+`queryOptions()` generates the `queryKey` and `queryFn` needed by `useQuery`, `useSuspenseQuery`, `prefetchQuery`, and similar hooks:
+
+```typescript
+const options = orpcUtils.planet.list.queryOptions({ input: { limit: 10 } })
+// options.queryKey — typed DataTag for cache operations
+// options.queryFn  — calls orpc.planet.list({ limit: 10 })
+```
+
+Pass these directly to `useQuery`:
+
+```typescript
+const { data } = useQuery(orpcUtils.planet.list.queryOptions({ input: { limit: 10 } }))
+```
+
+### Conditional fetching with skipToken
+
+```typescript
+import { skipToken } from '@tanstack/query-core'
+
+const { data } = useQuery(
+  orpcUtils.planet.find.queryOptions({
+    input: isReady ? { id: planetId } : skipToken,
+  }),
+)
+// enabled is automatically set to false when skipToken is used as input
+```
+
+## Infinite query options
+
+`infiniteOptions()` generates options for `useInfiniteQuery`:
+
+```typescript
+const { data } = useInfiniteQuery(
+  orpcUtils.planet.list.infiniteOptions({
+    input: pageParam => ({ cursor: pageParam, limit: 20 }),
+    initialPageParam: 0,
+    getNextPageParam: lastPage => lastPage.nextCursor,
+  }),
+)
+```
+
+## Mutation options
+
+`mutationOptions()` generates options for `useMutation`:
+
+```typescript
+const { mutate } = useMutation(
+  orpcUtils.planet.create.mutationOptions({
+    onSuccess: (data) => {
+      console.log('Created:', data.name)
+    },
+  }),
+)
+
+mutate({ name: 'Mars', description: 'The red planet' })
+```
+
+## Cache invalidation with queryKey
+
+`queryKey()` generates a fully-typed cache key for targeted invalidation:
+
+```typescript
+const queryClient = useQueryClient()
+
+// Invalidate all planet.list queries
+await queryClient.invalidateQueries({ queryKey: orpcUtils.planet.list.queryKey() })
+
+// Invalidate a specific planet.list query
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.list.queryKey({ input: { limit: 10 } }),
+})
+```
+
+Use the `.key()` method (available at any router level) for **partial matching** — it matches all queries under that path:
+
+```typescript
+// Invalidate all planet queries (list, find, create, ...)
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.planet.key(),
+})
+
+// Invalidate all queries in the entire router
+await queryClient.invalidateQueries({
+  queryKey: orpcUtils.key(),
+})
+```
+
+## Mutation key
+
+```typescript
+const isMutating = useIsMutating({
+  mutationKey: orpcUtils.planet.create.mutationKey(),
+})
+```
+
+## Calling the procedure directly
+
+Each procedure utils exposes a `call` property which is the raw client function:
+
+```typescript
+const planets = await orpcUtils.planet.list.call({ limit: 10 })
+```
+
+## Streaming queries (SSE / Event Iterator)
+
+oRPC supports server-sent events through event iterators. The `experimental_streamedOptions` and `experimental_liveOptions` helpers integrate them with TanStack Query. See [Streaming & SSE](/server/streaming-sse) for how to define streaming procedures on the server.
+
+### Streamed queries
+
+A streamed query accumulates chunks into an array as they arrive:
+
+```typescript
+const { data } = useQuery(
+  orpcUtils.planet.stream.experimental_streamedOptions({ input: {} }),
+)
+// data is the accumulated array of chunks
+```
+
+### Live queries
+
+A live query replaces the entire result with each new chunk — useful for real-time data where you only want the latest value:
+
+```typescript
+const { data } = useQuery(
+  orpcUtils.planet.live.experimental_liveOptions({ input: {} }),
+)
+// data is always the latest chunk
+```
+
+## Default options
+
+Pass `experimental_defaults` to `createRouterUtils` to set default options for all procedures:
+
+```typescript
+const orpcUtils = createRouterUtils(orpc, {
+  experimental_defaults: {
+    planet: {
+      list: {
+        queryOptions: { staleTime: 60_000 },
+      },
+    },
+  },
+})
+```

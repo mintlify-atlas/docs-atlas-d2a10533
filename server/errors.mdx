@@ -1,0 +1,139 @@
+---
+title: Errors
+description: Typed, serializable error handling with ORPCError and typed error maps.
+---
+
+oRPC provides a first-class error handling system. Errors thrown by procedures are serialized and sent to the client as structured JSON, with full type information preserved end-to-end.
+
+## `ORPCError`
+
+`ORPCError` is the core error class. Throw it from any handler or middleware:
+
+```ts
+import { ORPCError } from '@orpc/server'
+
+const procedure = os.handler(async () => {
+  throw new ORPCError('NOT_FOUND', {
+    status: 404,
+    message: 'The requested resource was not found',
+  })
+})
+```
+
+The first argument is a string error **code**. By convention, codes are `SCREAMING_SNAKE_CASE`. The second argument is an options object:
+
+| Option    | Type      | Description                                   |
+|-----------|-----------|-----------------------------------------------|
+| `status`  | `number`  | HTTP status code (must be 4xx or 5xx)         |
+| `message` | `string`  | Human-readable error message                  |
+| `data`    | `any`     | Extra structured data attached to the error   |
+| `cause`   | `unknown` | The underlying cause (not sent to the client) |
+
+## Standard error codes
+
+oRPC pre-defines common error codes that map to standard HTTP status codes:
+
+| Code | Status |
+|------|--------|
+| `BAD_REQUEST` | 400 |
+| `UNAUTHORIZED` | 401 |
+| `FORBIDDEN` | 403 |
+| `NOT_FOUND` | 404 |
+| `METHOD_NOT_SUPPORTED` | 405 |
+| `TIMEOUT` | 408 |
+| `CONFLICT` | 409 |
+| `PRECONDITION_FAILED` | 412 |
+| `PAYLOAD_TOO_LARGE` | 413 |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 |
+| `UNPROCESSABLE_CONTENT` | 422 |
+| `TOO_MANY_REQUESTS` | 429 |
+| `CLIENT_CLOSED_REQUEST` | 499 |
+| `INTERNAL_SERVER_ERROR` | 500 |
+| `NOT_IMPLEMENTED` | 501 |
+| `BAD_GATEWAY` | 502 |
+| `SERVICE_UNAVAILABLE` | 503 |
+| `GATEWAY_TIMEOUT` | 504 |
+
+## Typed errors with `.errors()`
+
+Declare the errors a procedure can throw using `.errors()`. This provides typed error constructors inside the handler and propagates type information to the client and OpenAPI spec.
+
+```ts
+import { os } from '@orpc/server'
+import * as z from 'zod'
+
+const procedure = os
+  .errors({
+    NOT_FOUND: {
+      status: 404,
+      message: 'Planet not found',
+    },
+    FORBIDDEN: {
+      status: 403,
+      data: z.object({ requiredRole: z.string() }),
+    },
+  })
+  .handler(async ({ errors }) => {
+    // errors.NOT_FOUND() creates an ORPCError with status 404
+    throw errors.NOT_FOUND()
+
+    // errors.FORBIDDEN() expects structured data
+    throw errors.FORBIDDEN({ data: { requiredRole: 'admin' } })
+  })
+```
+
+The `errors` object in the handler is a typed map of constructors. Each constructor accepts an optional options object without the `status` field (since that is set in the error map).
+
+## Error maps on builders
+
+You can define shared errors on a builder so they are available to all derived procedures:
+
+```ts
+const base = os.errors({
+  UNAUTHORIZED: { status: 401 },
+  RATE_LIMITED: { status: 429 },
+})
+
+const procedure = base
+  .errors({ NOT_FOUND: { status: 404 } }) // merged with base errors
+  .handler(async ({ errors }) => {
+    throw errors.UNAUTHORIZED() // from base
+    throw errors.NOT_FOUND()    // from this procedure
+  })
+```
+
+Error maps are **sparse-merged**: the most specific definition wins.
+
+## `isDefinedError()`
+
+On the client side, use `isDefinedError()` to narrow an unknown error to a typed `ORPCError` that was declared in the error map:
+
+```ts
+import { isDefinedError } from '@orpc/server'
+
+try {
+  await orpc.planet.find({ id: 99 })
+} catch (error) {
+  if (isDefinedError(error)) {
+    // error is now typed as ORPCError with known code and data
+    console.error(error.code, error.data)
+  }
+}
+```
+
+## The `safe()` helper
+
+For ergonomic error handling without try/catch:
+
+```ts
+import { safe } from '@orpc/server'
+
+const [error, data] = await safe(orpc.planet.find({ id: 99 }))
+if (error) {
+  if (isDefinedError(error)) {
+    console.error(error.code) // typed
+  }
+} else {
+  console.log(data) // typed planet
+}
+```

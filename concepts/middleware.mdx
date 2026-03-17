@@ -1,0 +1,148 @@
+---
+title: "Middleware"
+description: "Middleware intercepts procedure calls to share logic across procedures — authentication, logging, context enrichment, and more."
+---
+
+**Middleware** runs between the server receiving a request and your procedure handler executing. It can inspect or transform the input, enrich the context, short-circuit the call by throwing an error, or observe the output.
+
+## Writing middleware
+
+Use `os.middleware()` to create a typed middleware:
+
+```typescript
+import { os, ORPCError } from '@orpc/server'
+
+const authMiddleware = os.middleware(async ({ context, next }) => {
+  const user = await getUserFromToken(context.headers?.authorization)
+
+  if (!user) {
+    throw new ORPCError('UNAUTHORIZED')
+  }
+
+  // Call next() to continue the chain, passing additional context
+  return next({ context: { user } })
+})
+```
+
+The middleware function receives:
+
+| Property | Description |
+|---|---|
+| `context` | The current context (from the server handler and previous middleware) |
+| `next` | Call this to continue to the next middleware or handler |
+| `input` | The raw (pre-validation) input for this call |
+| `path` | The procedure's path in the router |
+| `procedure` | Reference to the current procedure |
+| `signal` | `AbortSignal` from the request |
+| `errors` | Type-safe error constructors |
+
+## Attaching middleware
+
+### To a single procedure
+
+```typescript
+export const createPlanet = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .use(authMiddleware)
+  .input(PlanetSchema.omit({ id: true }))
+  .handler(async ({ input, context }) => {
+    // context.user is available and typed here
+    return { id: 1, name: input.name }
+  })
+```
+
+### To an entire router
+
+```typescript
+export const planetRouter = os
+  .use(authMiddleware)
+  .router({
+    list: listPlanet,
+    find: findPlanet,
+    create: createPlanet,
+  })
+```
+
+## Context transformation
+
+Middleware can extend the context by passing additional properties to `next()`. The types are tracked precisely — downstream middleware and handlers see the merged context:
+
+```typescript
+import type { IncomingHttpHeaders } from 'node:http'
+import { os, ORPCError } from '@orpc/server'
+
+// The middleware requires { headers } in context and adds { user }
+const authMiddleware = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .middleware(async ({ context, next }) => {
+    const user = parseJWT(context.headers.authorization?.split(' ')[1])
+
+    if (!user) {
+      throw new ORPCError('UNAUTHORIZED')
+    }
+
+    return next({ context: { user } })
+  })
+
+export const createPlanet = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .use(authMiddleware)
+  .handler(async ({ input, context }) => {
+    // TypeScript knows context.user is defined here
+    console.log(context.user)
+    return { id: 1, name: 'Earth' }
+  })
+```
+
+## Chaining multiple middleware
+
+Call `.use()` multiple times to chain middleware. They execute in the order they are attached:
+
+```typescript
+export const createPlanet = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .use(authMiddleware)    // runs first
+  .use(loggingMiddleware) // runs second
+  .input(PlanetSchema.omit({ id: true }))
+  .handler(async ({ input, context }) => {
+    return { id: 1, name: input.name }
+  })
+```
+
+## Middleware concatenation
+
+You can compose two middlewares into one using `.concat()`:
+
+```typescript
+const authAndLog = authMiddleware.concat(loggingMiddleware)
+
+export const createPlanet = os
+  .$context<{ headers: IncomingHttpHeaders }>()
+  .use(authAndLog)
+  .handler(async ({ input, context }) => {
+    return { id: 1, name: 'Earth' }
+  })
+```
+
+## Input mapping
+
+Middleware can operate on a mapped version of the input without changing the procedure's public input schema. Pass a mapping function as the second argument to `.use()`:
+
+```typescript
+export const myProcedure = os
+  .input(z.object({ userId: z.string() }))
+  .use(
+    async ({ context, next }, userId: string) => {
+      const user = await db.user.findUnique({ where: { id: userId } })
+      return next({ context: { user } })
+    },
+    (input) => input.userId, // map from { userId } to just the string
+  )
+  .handler(async ({ context }) => {
+    return context.user
+  })
+```
+
+<Tip>
+  Middleware created with `os.middleware()` is reusable across procedures and routers. Define shared middleware in a separate file and import it where needed.
+</Tip>

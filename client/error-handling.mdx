@@ -1,0 +1,168 @@
+---
+title: 'Error handling'
+description: 'Handle typed and untyped errors from oRPC procedures using ORPCError, isDefinedError, and the safe() helper.'
+---
+
+oRPC propagates server errors to the client as `ORPCError` instances. Procedures can also declare **typed errors** using `.errors({})` — these are surfaced with full type information so you can handle them precisely.
+
+## ORPCError
+
+Every error thrown by an oRPC procedure arrives on the client as an `ORPCError`. Use `instanceof` to check:
+
+```typescript
+import { ORPCError } from '@orpc/client'
+
+try {
+  await orpc.planet.find({ id: 999 })
+} catch (error) {
+  if (error instanceof ORPCError) {
+    console.log(error.code)    // e.g. 'NOT_FOUND'
+    console.log(error.status)  // e.g. 404
+    console.log(error.message) // human-readable message
+    console.log(error.data)    // structured data attached to the error
+  }
+}
+```
+
+### Built-in error codes
+
+oRPC defines standard codes that map to HTTP status codes:
+
+| Code | Status |
+|------|--------|
+| `BAD_REQUEST` | 400 |
+| `UNAUTHORIZED` | 401 |
+| `FORBIDDEN` | 403 |
+| `NOT_FOUND` | 404 |
+| `CONFLICT` | 409 |
+| `UNPROCESSABLE_CONTENT` | 422 |
+| `TOO_MANY_REQUESTS` | 429 |
+| `INTERNAL_SERVER_ERROR` | 500 |
+| `SERVICE_UNAVAILABLE` | 503 |
+
+You can also use any custom string code.
+
+## isDefinedError
+
+When a procedure declares typed errors with `.errors({})`, those errors have `defined: true` set on them. Use `isDefinedError` to narrow an error to the typed union:
+
+```typescript
+import { isDefinedError } from '@orpc/client'
+
+try {
+  await orpc.planet.create({ name: 'Pluto' })
+} catch (error) {
+  if (isDefinedError(error)) {
+    // error is now narrowed to the typed error union declared on the procedure
+    switch (error.code) {
+      case 'QUOTA_EXCEEDED':
+        console.log('Quota exceeded, data:', error.data)
+        break
+      case 'ALREADY_EXISTS':
+        console.log('Planet already exists')
+        break
+    }
+  } else {
+    // unexpected error — rethrow or log
+    throw error
+  }
+}
+```
+
+`isDefinedError(error)` returns `true` when `error instanceof ORPCError && error.defined`.
+
+## safe()
+
+The `safe()` helper wraps any `ClientPromiseResult` and returns a `SafeResult` that supports both tuple-style and object-style destructuring. It never throws.
+
+```typescript
+import { safe } from '@orpc/client'
+
+const result = await safe(orpc.planet.find({ id: 1 }))
+
+// Tuple style
+const [error, data, isDefined, isSuccess] = result
+
+// Object style
+const { error, data, isDefined, isSuccess } = result
+
+if (result.isSuccess) {
+  console.log(result.data) // typed as the procedure output
+} else if (result.isDefined) {
+  // result.error is the typed error union from .errors({})
+  console.log(result.error.code)
+} else {
+  // result.error is an unexpected error (e.g. network failure)
+  console.error(result.error)
+}
+```
+
+### SafeResult structure
+
+| Case | `error` | `data` | `isDefined` | `isSuccess` |
+|------|---------|--------|-------------|-------------|
+| Success | `null` | output | `false` | `true` |
+| Typed error | `ORPCError` | `undefined` | `true` | `false` |
+| Unexpected error | error | `undefined` | `false` | `false` |
+
+## createSafeClient
+
+`createSafeClient(client)` wraps an entire client so that every call returns a `SafeResult` instead of throwing. This is useful when you want a consistent error-handling pattern across your application.
+
+```typescript
+import { createORPCClient, createSafeClient } from '@orpc/client'
+
+const orpc = createORPCClient<RouterClient<typeof router>>(link)
+const safeOrpc = createSafeClient(orpc)
+
+// No try/catch needed
+const { error, data } = await safeOrpc.planet.find({ id: 1 })
+
+if (error) {
+  console.error(error.message)
+} else {
+  console.log(data.name)
+}
+```
+
+## Handling typed errors end-to-end
+
+When you define typed errors on the server, they flow through to the client with full type information:
+
+```typescript
+// server.ts
+import { os, ORPCError } from '@orpc/server'
+import * as z from 'zod'
+
+const createPlanet = os
+  .errors({
+    QUOTA_EXCEEDED: {
+      status: 429,
+      data: z.object({ limit: z.number(), current: z.number() }),
+    },
+  })
+  .input(z.object({ name: z.string() }))
+  .handler(async ({ input }) => {
+    throw new ORPCError('QUOTA_EXCEEDED', {
+      data: { limit: 10, current: 11 },
+    })
+  })
+```
+
+```typescript
+// client.ts
+import { safe, isDefinedError } from '@orpc/client'
+
+const [error, planet] = await safe(orpc.planet.create({ name: 'Pluto' }))
+
+if (isDefinedError(error)) {
+  if (error.code === 'QUOTA_EXCEEDED') {
+    // error.data is typed as { limit: number; current: number }
+    console.log(`Limit: ${error.data.limit}, Current: ${error.data.current}`)
+  }
+}
+```
+
+<Note>
+The `instanceof ORPCError` check works correctly even when oRPC is loaded in multiple module contexts (e.g. Next.js with optimised SSR). oRPC maintains a global registry of `ORPCError` constructors to make cross-context checks reliable.
+</Note>

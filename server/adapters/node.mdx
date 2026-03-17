@@ -1,0 +1,93 @@
+---
+title: Node.js Adapter
+description: Serve oRPC with the built-in Node.js HTTP server.
+---
+
+The Node.js adapter integrates with the `node:http` and `node:https` modules that ship with Node.js.
+
+## Installation
+
+```ts
+import { RPCHandler } from '@orpc/server/node'
+```
+
+## Basic usage
+
+```ts
+import { createServer } from 'node:http'
+import { RPCHandler } from '@orpc/server/node'
+import { CORSPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [new CORSPlugin()],
+})
+
+const server = createServer(async (req, res) => {
+  const result = await handler.handle(req, res, {
+    context: { headers: req.headers },
+  })
+
+  if (!result.matched) {
+    res.statusCode = 404
+    res.end('No procedure matched')
+  }
+})
+
+server.listen(3000, '127.0.0.1', () =>
+  console.log('Listening on http://127.0.0.1:3000'),
+)
+```
+
+## `handle(req, res, options)`
+
+| Parameter         | Type                      | Description                              |
+|-------------------|---------------------------|------------------------------------------|
+| `req`             | `IncomingMessage`         | The incoming Node.js HTTP request        |
+| `res`             | `ServerResponse`          | The outgoing Node.js HTTP response       |
+| `options.context` | Initial context type      | Context passed to middleware             |
+| `options.prefix`  | `string` (optional)       | Strip this prefix before routing         |
+
+Returns `{ matched: true }` if a procedure was matched, or `{ matched: false }` otherwise.
+
+<Note>
+  Unlike the fetch adapter, the Node.js adapter writes the response to `res` directly rather than returning a `Response` object.
+</Note>
+
+## With Express
+
+```ts
+import express from 'express'
+import { RPCHandler } from '@orpc/server/node'
+import { router } from './router'
+
+const app = express()
+const handler = new RPCHandler(router)
+
+app.use('/orpc', async (req, res, next) => {
+  const result = await handler.handle(req, res, {
+    prefix: '/orpc',
+    context: { headers: req.headers },
+  })
+
+  if (!result.matched) {
+    next()
+  }
+})
+
+app.listen(3000)
+```
+
+## Options
+
+<ParamField body="plugins" type="NodeHttpHandlerPlugin[]">
+  Array of plugins to apply. See [Plugins](/server/plugins/cors).
+</ParamField>
+
+<ParamField body="strictGetMethodPluginEnabled" type="boolean" default="true">
+  Restricts non-mutation procedures to GET requests.
+</ParamField>
+
+<ParamField body="adapterInterceptors" type="Interceptor[]">
+  Low-level interceptors around the full request handling cycle.
+</ParamField>

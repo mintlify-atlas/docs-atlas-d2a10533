@@ -1,0 +1,109 @@
+---
+title: ArkType Schema Converter
+description: Use @orpc/arktype to convert ArkType schemas into JSON Schema for OpenAPI spec generation.
+---
+
+The `@orpc/arktype` package provides an ArkType-to-JSON Schema converter for oRPC's OpenAPI generator. Like the Valibot converter, it is marked as `experimental_` as ArkType's JSON Schema export API continues to mature.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @orpc/arktype arktype
+```
+
+```bash pnpm
+pnpm add @orpc/arktype arktype
+```
+
+```bash yarn
+yarn add @orpc/arktype arktype
+```
+</CodeGroup>
+
+## Usage
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { experimental_ArkTypeToJsonSchemaConverter } from '@orpc/arktype'
+import { type } from 'arktype'
+import { os } from '@orpc/server'
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [new experimental_ArkTypeToJsonSchemaConverter()],
+})
+
+const PlanetSchema = type({
+  id: 'number',
+  name: 'string',
+  'description?': 'string',
+})
+
+const router = {
+  planet: {
+    find: os
+      .input(type({ id: 'number' }))
+      .output(PlanetSchema)
+      .handler(async ({ input }) => ({ id: input.id, name: 'Earth' })),
+  },
+}
+
+const spec = await generator.generate(router, {
+  info: { title: 'Planet API', version: '1.0.0' },
+})
+```
+
+## Constructor options
+
+```typescript
+class experimental_ArkTypeToJsonSchemaConverter implements ConditionalSchemaConverter {
+  constructor(options?: ToJsonSchema.Options)
+}
+```
+
+Options are passed directly to ArkType's `Type.toJsonSchema()`. The converter applies a sensible default fallback for `Date` types, rendering them as `{ type: 'string', format: 'date-time' }`:
+
+```typescript
+const defaultFallback = {
+  date: (ctx) => ({
+    ...ctx.base,
+    type: 'string',
+    format: 'date-time',
+  }),
+}
+```
+
+You can override this by passing your own `fallback` option:
+
+```typescript
+new experimental_ArkTypeToJsonSchemaConverter({
+  fallback: {
+    date: (ctx) => ({ type: 'string', format: 'date' }),
+  },
+})
+```
+
+## Mixing ArkType with other libraries
+
+```typescript
+import { OpenAPIGenerator } from '@orpc/openapi'
+import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import { experimental_ArkTypeToJsonSchemaConverter } from '@orpc/arktype'
+
+const generator = new OpenAPIGenerator({
+  schemaConverters: [
+    new ZodToJsonSchemaConverter(),
+    new experimental_ArkTypeToJsonSchemaConverter(),
+  ],
+})
+```
+
+Each converter identifies its schemas by checking the `~standard.vendor` property. ArkType schemas have `vendor === 'arktype'`, so they're automatically routed to `experimental_ArkTypeToJsonSchemaConverter`.
+
+<Warning>
+  The `experimental_` prefix reflects that ArkType's `toJsonSchema()` API is still evolving. The interface may change in future releases.
+</Warning>
+
+## Notes on strategy
+
+Unlike the Zod converter, the ArkType converter does not currently differentiate between `input` and `output` strategies — it always calls `schema.toJsonSchema(options)` with the same options regardless of strategy. If your ArkType schemas transform data between input and output, the generated spec may not reflect the transformation.

@@ -1,0 +1,100 @@
+---
+title: Cloudflare Adapter
+description: Deploy oRPC on Cloudflare Workers and Durable Objects using the fetch adapter.
+---
+
+Cloudflare Workers run on the V8 runtime and support the standard Fetch API. oRPC's [fetch adapter](/server/adapters/fetch) works natively without any additional glue.
+
+## Basic Worker
+
+```ts
+import { RPCHandler } from '@orpc/server/fetch'
+import { CORSPlugin } from '@orpc/server/plugins'
+import { router } from './router'
+
+const handler = new RPCHandler(router, {
+  plugins: [new CORSPlugin()],
+})
+
+export default {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const result = await handler.handle(request, {
+      context: { env, ctx },
+    })
+
+    if (!result.matched) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    return result.response
+  },
+}
+```
+
+## Passing D1, KV, R2 as context
+
+Cloudflare bindings (D1 databases, KV namespaces, R2 buckets) are available in the `env` object. Pass them through the oRPC context:
+
+```ts
+// types.ts
+export interface Env {
+  DB: D1Database
+  KV: KVNamespace
+  BUCKET: R2Bucket
+}
+```
+
+```ts
+// orpc.ts
+import { os } from '@orpc/server'
+import type { Env } from './types'
+
+export const base = os.$context<{ env: Env }>()
+```
+
+```ts
+// procedures/planet.ts
+import { base } from '../orpc'
+import * as z from 'zod'
+
+export const listPlanets = base
+  .input(z.object({ limit: z.number().optional() }))
+  .handler(async ({ input, context }) => {
+    const { results } = await context.env.DB
+      .prepare('SELECT * FROM planets LIMIT ?')
+      .bind(input.limit ?? 10)
+      .all()
+    return results
+  })
+```
+
+## Durable Objects with `EventPublisher`
+
+For pub/sub patterns (e.g., broadcasting to WebSocket connections), use `EventPublisher` inside a Durable Object:
+
+```ts
+import { EventPublisher } from '@orpc/server'
+
+export class PlanetDO implements DurableObject {
+  publisher = new EventPublisher<{ updated: { id: number; name: string } }>()
+
+  async fetch(request: Request): Promise<Response> {
+    // Handle WebSocket upgrade or publishing events
+    if (request.url.endsWith('/notify')) {
+      const body = await request.json()
+      await this.publisher.publish('updated', body)
+      return new Response('OK')
+    }
+
+    return new Response('Not found', { status: 404 })
+  }
+}
+```
+
+<Tip>
+  For WebSocket connections on Cloudflare Durable Objects, see the [WebSockets](/server/websockets) page which covers the hibernation pattern.
+</Tip>
